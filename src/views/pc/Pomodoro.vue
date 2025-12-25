@@ -1,359 +1,302 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, h } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useCustomSettingsStore } from "@/stores/CustomSettings";
 import { Message } from "@arco-design/web-vue";
-import { useHasVisitedBeforeStore } from "@/stores/HasVisitedBefore";
-// 记录用户是不是第一次到这个页面
-const hasVisitedBeforeStore = useHasVisitedBeforeStore();
-const isFirst = computed({
-  get: () => hasVisitedBeforeStore.appPomodoro,
-  set: (newValue) => (hasVisitedBeforeStore.appPomodoro = newValue),
-});
+// 引入图标
+import { IconPlayArrow, IconPause, IconRefresh } from "@arco-design/web-vue/es/icon";
 
-const currentPath = window.electron.getAppPath(); // 当前应用的工作路径
-
-const isRunning = ref(false); // 控制按钮显示隐藏
-let totalTime = ref(0); // 计算成的秒数
-const isStart = ref(true); // 是不是第一次启动定时器
-let intervalId = null;
-let isEnding = ref(false); // 定义结束按钮是否显示隐藏
-
-// 计算分钟
-const minutes = computed(() =>
-  Math.floor(totalTime.value / 60)
-    .toString()
-    .padStart(2, "0")
-);
-// 计算秒
-const seconds = computed(() =>
-  (totalTime.value % 60).toString().padStart(2, "0")
-);
-const hintText = ref("待开始"); // 上方提示文字
-// 读取番茄钟配置
+// --- 基础配置与 Store ---
 const customSettingsStore = useCustomSettingsStore();
-const backgroundImage = computed(
-  () => customSettingsStore.customSettings["f-pomodoro-bgi"]
-); // 背景图
+const currentPath = window.electron.getAppPath(); // 获取当前路径用于音频加载
+const backgroundImage = computed(() => customSettingsStore.customSettings["f-pomodoro-bgi"]);
 
-const { duration, shortBreakDuration, longBreakDuration, longBreakInterval } =
-  customSettingsStore.customSettings["pomodoroSettings"]; // 解构出来
+// --- 卡片数据配置 ---
+const pomodoroConfigs = ref([
+  { id: 1, title: '深度专注', time: 60, icon: '🔥', bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+  { id: 2, title: '常规番茄', time: 25, icon: '🍅', bg: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)' },
+  { id: 3, title: '短休息', time: 5, icon: '☕', bg: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)' },
+  { id: 4, title: '长休息', time: 15, icon: '🏖️', bg: 'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)' }
+]);
 
-let step = ref(1); // 记录当前在第几轮
-// 播放器对象
-const audioShortBreakPlayer = ref(null);
-const audioLongBreakPlayer = ref(null);
-const audioFocusPlayer = ref(null);
-const role = computed(
-  () => customSettingsStore.customSettings.voice.pomodoroV ?? "default"
-); // 当前角色
-const isClosed = computed(
-  () => customSettingsStore.customSettings.voice.isClosedV ?? "false"
-); //是否关闭(使用计算属性保持响应性)
+// --- 计时器核心状态 ---
+const isTimerActive = ref(false); // 控制是显示卡片还是显示计时器
+const isRunning = ref(false); // 计时器运行状态
+const percent = ref(0); // 进度条百分比
+const totalTime = ref(0); // 当前剩余秒数
+const originTime = ref(0); // 记录初始总秒数（用于计算进度）
+let intervalId = null; // 定时器ID
+let halfFirst = true; // 记录是否已播放过半提醒
 
-// 开启计时器（但不一定开启成功）
+// --- 音频播放器引用 ---
+const audioFullTimePlayer = ref(null);
+const audioHalfTimePlayer = ref(null);
+const role = computed(() => customSettingsStore.customSettings.voice.timerV ?? "default");
+const isClosed = computed(() => customSettingsStore.customSettings.voice.isClosedV ?? "false");
+
+// --- 计算属性 ---
+const minutes = computed(() => Math.floor(totalTime.value / 60).toString().padStart(2, "0"));
+const seconds = computed(() => (totalTime.value % 60).toString().padStart(2, "0"));
+
+// --- 核心动作：选择卡片并开始 ---
+const selectCard = (config) => {
+  // 1. 设置时间
+  originTime.value = config.time * 60;
+  totalTime.value = originTime.value;
+  
+  // 2. 状态重置
+  percent.value = 0;
+  halfFirst = true;
+  
+  // 3. 切换界面并启动
+  isTimerActive.value = true;
+  startTimer(); 
+};
+
+// --- 计时器逻辑 (移植自 Timer.vue) ---
 const startTimer = () => {
-  !isEnding.value && (isEnding.value = true); // 是false的话设置成true，控制结束按钮的显示隐藏
-  if (isStart.value) {
-    // 第一次进来，就更新
-    if (hintText.value === "待开始" || hintText.value === "专注中") {
-      totalTime.value = duration * 60;
-    } else if (hintText.value === "短休息") {
-      totalTime.value = shortBreakDuration * 60; // 短休息
-    } else if (hintText.value === "长休息") {
-      totalTime.value = longBreakDuration * 60; // 长休息
-    }
-  }
-  if (hintText.value === "待开始") {
-    hintText.value = "专注中";
-  }
-  // 当前没有定时器在运行
   if (intervalId === null) {
     isRunning.value = true;
-    // 开启定时器
     intervalId = setInterval(() => {
       if (totalTime.value > 0) {
         totalTime.value--;
+        // 更新进度条
+        percent.value = Number((1 - totalTime.value / originTime.value).toFixed(2));
+        
+        // 时间过半提醒
+        if (percent.value >= 0.5 && halfFirst) {
+          halfFirst = false;
+          !isClosed.value && audioHalfTimePlayer.value?.play();
+          window.electron.notificationUser("timer-half");
+        }
       } else {
-        // 时间结束，做最后的工作
-        // 清除定时器
+        // 时间结束
         clearInterval(intervalId);
         intervalId = null;
-
-        // 更新提示文字并播放音乐
-        if (hintText.value === "专注中" && step.value !== longBreakInterval) {
-          !isClosed.value && audioShortBreakPlayer.value.play();
-          window.electron.notificationUser("pomodoro-shortBreak");
-          hintText.value = "短休息";
-        } else if (
-          hintText.value === "专注中" &&
-          step.value === longBreakInterval
-        ) {
-          !isClosed.value && audioLongBreakPlayer.value.play();
-          window.electron.notificationUser("pomodoro-longBreak");
-          hintText.value = "长休息";
-        } else if (hintText.value === "短休息" || hintText.value === "长休息") {
-          !isClosed.value && audioFocusPlayer.value.play();
-          window.electron.notificationUser("pomodoro-work");
-          // 一个休息以后是一轮
-          step.value === longBreakInterval
-            ? (step.value = 1)
-            : (step.value = step.value + 1);
-          hintText.value = "专注中";
-        } // 修改上方提示文字
-        isStart.value = true; // 标记下次再开启定时器是第一次开启
-        startTimer(); // 继续计时
+        isRunning.value = false;
+        percent.value = 1; // 进度条填满
+        !isClosed.value && audioFullTimePlayer.value?.play();
+        window.electron.notificationUser("timer-full");
       }
     }, 1000);
   }
 };
 
-// 暂停定时器
 const pauseTimer = () => {
   clearInterval(intervalId);
   intervalId = null;
   isRunning.value = false;
-  isStart.value = false; // 标记暂停过
-};
-// 终止定时器
-const endTimer = () => {
-  // 清除定时器
-  clearInterval(intervalId);
-  intervalId = null;
-  // 修改页面状态
-  isStart.value = true;
-  hintText.value = "待开始";
-  isRunning.value = false;
-  totalTime.value = 0;
-  isEnding.value = false;
-  step.value = 1;
 };
 
-// 挂载完成的初始化工作
-onMounted(() => {
-  // 判断是不是第一次
-  if (isFirst.value) {
-    Message.info({
-      content: "按F键即可进入全屏、按A键可以发送小挂件😎",
-    });
-    isFirst.value = false;
-  }
-  /*   const main = document.querySelector(".main"); // 选中元素
-  main.style.setProperty("--backgroundImage", `url(${backgroundImage.value})`); // 设置 CSS 变量
-  alert(backgroundImage.value);
-  console.log(main);
-  // 获取元素的属性值——调试使用
-  const value = getComputedStyle(main)
-    .getPropertyValue("--backgroundImage")
-    .trim();
-  console.log(value); */
-  window.addEventListener("keydown", handleKeyDown);
-});
-// 结束的收尾工作
+// --- 返回卡片选择页 (重置) ---
+const resetToCards = () => {
+  pauseTimer();
+  isTimerActive.value = false;
+  totalTime.value = 0;
+  percent.value = 0;
+};
+
+// --- 生命周期 ---
 onUnmounted(() => {
   clearInterval(intervalId);
-  window.removeEventListener("keydown", handleKeyDown);
 });
-// 添加监听事件
-const handleKeyDown = (e) => {
-  if (e.key === "f") {
-    // 执行跳转逻辑，向主进程发送消息打开新窗口并加载指定页面
-    window.electron.openPomodoroWindow("f");
-  } else if (e.key === "a") {
-    // 添加widget到桌面
-    window.electron.openPomodoroWindow("a");
-  }
-};
-// 双击事件
-const handleDBLClick = (event) => {
-  // 双击定时器部分不应该有响应
-  if (event.target.closest(".pomodoro-timer")) {
-    return;
-  }
-  window.electron.openPomodoroWindow("f");
-};
-let lastRightClickTime = ""; // 存储上次右键点击的时间
-// 右键双击
-const handleContextMenu = (event) => {
-  if (event.button === 2) {
-    // 检查右键单击
-    const now = new Date().getTime();
-    if (!lastRightClickTime || now - lastRightClickTime > 300) {
-      // 大于300毫秒，认为是右键单击
-      lastRightClickTime = now;
-    } else {
-      // 小于300毫秒，认为是右键双击
-      window.electron.openPomodoroWindow("a");
-    }
-  }
-};
 </script>
+
 <template>
-  <div
-    class="main"
-    @contextmenu.prevent="handleContextMenu"
-    @dblclick="handleDBLClick"
-    :style="{ backgroundImage: `url(${backgroundImage})` }"
-  >
-    <div class="pomodoro-timer">
-      <!-- 上方提示文字 （专注中、短休息、长休息）-->
-      <div class="hint">
-        {{ hintText }}
-      </div>
-      <!-- 下方展示计时器 -->
-      <div class="bottom">
-        <!-- 轮数 -->
-        <div class="step">
-          {{ step }}
+  <div class="main" :style="{ backgroundImage: `url({backgroundImage})` }">
+    
+    <transition name="fade" mode="out-in">
+      <div v-if="!isTimerActive" class="card-container" key="cards">
+        <div 
+          v-for="item in pomodoroConfigs" 
+          :key="item.id" 
+          class="task-card"
+          :style="{ background: item.bg }"
+          @click="selectCard(item)"
+        >
+          <div class="card-content">
+            <span class="card-icon">{{ item.icon }}</span>
+            <div class="card-info">
+              <div class="card-title">{{ item.title }}</div>
+              <div class="card-time">{{ item.time }} 分钟</div>
+            </div>
+            <div class="start-btn">开始</div>
+          </div>
         </div>
-        <!-- 时间 -->
-        <div class="timer-display">{{ minutes }}:{{ seconds }}</div>
-        <!-- 开始暂停按钮 -->
-        <div class="button">
-          <a-button
-            v-if="!isRunning"
-            @click="startTimer"
-            shape="circle"
-            style="
-              width: 44px;
-              height: 44px;
-              color: white;
-              background-color: transparent;
-              border: 2px solid white;
-            "
-            ><icon-play-arrow size="1.5em"
-          /></a-button>
-          <a-button
-            @click="pauseTimer"
-            v-if="isRunning"
-            shape="circle"
-            style="
-              width: 44px;
-              height: 44px;
-              color: white;
-              background-color: transparent;
-              border: 2px solid white;
-            "
-            ><icon-pause size="1.5em"
-          /></a-button>
-          <a-button
-            @click="endTimer"
-            v-if="isEnding"
-            shape="circle"
-            style="
-              width: 44px;
-              height: 44px;
-              color: white;
-              background-color: transparent;
-              border: 2px solid white;
-              margin-left: 10px;
-            "
-            ><svg
-              t="1706081169498"
-              class="icon"
-              viewBox="0 0 1024 1024"
-              version="1.1"
-              xmlns="http://www.w3.org/2000/svg"
-              p-id="7401"
-              width="1.5em"
-              height="1.5em"
+      </div>
+
+      <div v-else class="timer-wrapper" key="timer">
+        <div class="timer-box">
+          <a-progress
+            status="warning"
+            :percent="percent"
+            type="circle"
+            size="large"
+            :width="80"
+            color="rgb(12, 228, 140)"
+            class="timer-progress"
+          >
+            <template #text>
+               <div class="timer-display">{{ minutes }}:{{ seconds }}</div>
+            </template>
+          </a-progress>
+
+          <div class="controls">
+            <a-button
+              @click="isRunning ? pauseTimer() : startTimer()"
+              shape="circle"
+              size="large"
+              class="control-btn play-btn"
             >
-              <path
-                d="M192 128a64 64 0 0 0-64 64v640a64 64 0 0 0 64 64h640a64 64 0 0 0 64-64V192a64 64 0 0 0-64-64H192z m0-64h640a128 128 0 0 1 128 128v640a128 128 0 0 1-128 128H192a128 128 0 0 1-128-128V192a128 128 0 0 1 128-128z"
-                fill="#ffffff"
-                p-id="7402"
-              ></path></svg
-          ></a-button>
+              <icon-pause v-if="isRunning" size="24" />
+              <icon-play-arrow v-else size="24" />
+            </a-button>
+
+            <a-button
+              @click="resetToCards"
+              shape="circle"
+              size="large"
+              class="control-btn reset-btn"
+            >
+              <icon-refresh size="20" />
+            </a-button>
+          </div>
         </div>
-        <!-- 播放音频 ：|轮到短休息|轮到长休息|轮到专注|-->
-        <audio
-          ref="audioShortBreakPlayer"
-          :src="`${currentPath}/assets/voices/pomodoro/${role}/shortBreak.wav`"
-        ></audio>
-        <audio
-          ref="audioLongBreakPlayer"
-          :src="`${currentPath}/assets/voices/pomodoro/${role}/longBreak.wav`"
-        ></audio>
-        <audio
-          ref="audioFocusPlayer"
-          :src="`${currentPath}/assets/voices/pomodoro/${role}/focus.wav`"
-        ></audio>
       </div>
-    </div>
+    </transition>
+
+    <!-- 播放音频 |时间过半|时间到|-->
+    <audio
+      ref="audioHalfTimePlayer"
+      :src="`${currentPath}/assets/voices/timer/${role}/halfTime.wav`"
+    ></audio>
+    <audio
+      ref="audioFullTimePlayer"
+      :src="`${currentPath}/assets/voices/timer/${role}/fullTime.wav`"
+    ></audio>
+
   </div>
 </template>
 
 <style scoped>
-/* 定义主界面样式 */
+/* 全局容器 */
 .main {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  flex-direction: row;
-  width: 100%;
-  height: 100%;
-  text-align: center;
-  font-family:  sans-serif;
-  color: white;
-  font-weight: 700;
-  background-size: cover; /* 覆盖整个容器 */
-  background-repeat: no-repeat; /* 不重复 */
-  background-position: center center; /* 图像居中显示 */
-}
-/* 定义定时器盒子样式 */
-.pomodoro-timer {
-  margin-top: 10%;
-  width: 340px;
-  height: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-direction: column;
-  border: 2px solid white;
-  border-radius: 10px;
-  padding: 0 15px;
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
 }
 
-/* 定义下方样式 */
-.bottom {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: row;
-  width: 340px;
-  height: 70px;
-  padding: 0 15px;
+/* === 卡片部分样式 === */
+.card-container {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  padding: 20px;
+  width: 90%;
+  max-width: 800px;
 }
-/* 定时器和轮数字体 */
-.timer-display,
-.step {
-  font-size: 3em;
-}
-.timer-display {
-  text-align: center;
-  padding-right: 40px;
-}
-.step {
-  flex: 1;
-  text-align: left;
-}
-/* 按钮样式 */
-.button {
-  flex: 1;
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-end;
+
+.task-card {
+  height: 120px;
+  border-radius: 15px;
   cursor: pointer;
-  margin-left: auto;
-}
-/* 提示样式 */
-.hint {
-  font-size: 1.5em;
-  margin: 10px 0px 0px;
-  text-align: center;
-  padding-right: 40px;
-}
-/* 自定义字体颜色 */
->>> .arco-progress-circle-text {
+  transition: all 0.3s ease;
+  display: flex; align-items: center;
+  padding: 0 25px;
   color: white;
+  box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+}
+
+.task-card:hover {
+  transform: translateY(-5px) scale(1.02);
+  box-shadow: 0 15px 30px rgba(0,0,0,0.3);
+}
+
+.card-content { display: flex; width: 100%; align-items: center; }
+.card-icon { font-size: 2.5em; margin-right: 20px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2)); }
+.card-info { flex: 1; text-align: left; }
+.card-title { font-size: 1.4em; font-weight: bold; margin-bottom: 5px;}
+.card-time { opacity: 0.9; font-size: 1em; }
+
+.start-btn {
+  background: rgba(255,255,255,0.2);
+  padding: 8px 18px;
+  border-radius: 20px;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255,255,255,0.4);
+  font-weight: bold;
+}
+
+/* === 计时器部分样式 (复刻图3) === */
+.timer-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.5s ease;
+}
+
+.timer-box {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  padding: 40px 60px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+}
+
+/* 覆盖 Arco Progress 内部文字样式 */
+.timer-display {
+  font-size: 3.5rem;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  line-height: 1;
+}
+
+/* 调整 Progress 圆环大小 */
+:deep(.arco-progress-circle) {
+  width: 200px !important;
+  height: 200px !important;
+}
+:deep(.arco-progress-circle-svg) {
+  transform: rotate(-90deg); /* 让进度条从顶部开始 */
+}
+
+.controls {
+  display: flex;
+  gap: 20px;
+}
+
+.control-btn {
+  background: transparent;
+  border: 2px solid white;
+  color: white;
+  width: 50px;
+  height: 50px;
+  transition: all 0.2s;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.play-btn { width: 64px; height: 64px; } /* 播放按钮大一点 */
+
+/* 过渡动画 */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 </style>
