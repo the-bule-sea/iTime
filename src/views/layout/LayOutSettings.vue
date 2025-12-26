@@ -14,15 +14,6 @@ const currentRouteKey = computed(() => route.path);
       <router-link to="/settings/global">
         <a-menu-item key="/settings/global">全局设置</a-menu-item>
       </router-link>
-      <router-link to="/settings/todo">
-        <a-menu-item key="/settings/todo">待办</a-menu-item>
-      </router-link>
-      <router-link to="/settings/clock">
-        <a-menu-item key="/settings/clock">时钟</a-menu-item>
-      </router-link>
-      <router-link to="/settings/appearance">
-        <a-menu-item key="/settings/appearance">外观设置</a-menu-item>
-      </router-link>
     </a-menu>
     <!-- 内容 -->
     <router-view></router-view>

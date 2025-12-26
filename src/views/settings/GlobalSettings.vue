@@ -6,128 +6,6 @@ const customSettingsStore = useCustomSettingsStore();
 
 let form = ref({ ...customSettingsStore.customSettings.shortcutKeys }); // 解构避免对象出现响应性
 
-// 定义控制是否可以输入的变量
-const fPomodoroDisabled = ref(true);
-const wPomodoroDisabled = ref(true);
-const fTimerDisabled = ref(true);
-const wTimerDisabled = ref(true);
-// 定义当前允许输入的输入框，后续还需要根据这个值更新
-const currentInput = ref(""); // 可以是 'fPomodoro', 'wPomodoro', 'fTimer', 'wTimer' 或者 ""
-
-const removeListener = ref(null); // 一个函数，用来移除监听器
-
-// 处理这些按钮点击的事件
-// 每次只允许一个输入框是可输入的
-const isSingleInput = () => {
-  if (currentInput.value) {
-    Message.error("只允许同时设置一个快捷方式🧐");
-    return false;
-  }
-  return true;
-};
-// 实时监听键盘的组合键并在输入框回显
-const beginKeyBoardListener = () => {
-  const pressedKeys = new Array(); // 存储按下的键
-  const keyDownHandler = async (event) => {
-    form.value[currentInput.value] = "";
-    let bigKey = event.key;
-    // 转换成大写更好看，也可以跟API对接
-    if (event.key.length == 1) {
-      bigKey = event.key.toUpperCase();
-    }
-    pressedKeys.push(bigKey); // 添加按下的键
-    const combination = Array.from(pressedKeys).join("+"); // 构建组合键字符串
-
-    // 检查当前是否有输入框被激活
-    if (currentInput.value && form.value.hasOwnProperty(currentInput.value)) {
-      // 将组合键回显到激活的输入框
-      form.value[currentInput.value] += `${combination}`;
-      event.preventDefault(); // 阻止默认行为
-    }
-  };
-  // 捕捉键盘弹起事件
-  const keyUpHandler = (event) => {
-    console.log("up", event.key);
-    pressedKeys.pop(); // 释放键时移除
-  };
-
-  // 添加键盘事件监听器
-  document.addEventListener("keydown", keyDownHandler);
-  document.addEventListener("keyup", keyUpHandler);
-
-  // 不需要时移除监听器
-  removeListener.value = () => {
-    document.removeEventListener("keydown", keyDownHandler);
-    document.removeEventListener("keyup", keyUpHandler);
-  };
-};
-
-// 定义点击事件 @params type 'fPomodoro'|'wPomodoro'|'fTimer'|'wTimer'
-const handleClick = (type) => {
-  // 先禁用应用内的所有快捷键
-  window.electron.disableAllShortcut();
-  if (isSingleInput()) {
-    // 做四件事，0：提醒用户。1：取消禁用输入框。2：更新当前输入框的值 3：开启键盘监听事件并回显到输入框
-    Message.info("直接按下键盘即可记录 😎");
-
-    if (type == "fPomodoro") {
-      fPomodoroDisabled.value = false;
-      currentInput.value = "fPomodoro";
-    } else if (type == "wPomodoro") {
-      wPomodoroDisabled.value = false;
-      currentInput.value = "wPomodoro";
-    } else if (type == "fTimer") {
-      fTimerDisabled.value = false;
-      currentInput.value = "fTimer";
-    } else if (type == "wTimer") {
-      wTimerDisabled.value = false;
-      currentInput.value = "wTimer";
-    }
-    beginKeyBoardListener();
-  }
-};
-// 手动重新渲染
-const updateForm = () => {
-  form.value = customSettingsStore.customSettings.shortcutKeys;
-};
-// 定义保存事件 @params type 'fPomodoro'|'wPomodoro'|'fTimer'|'wTimer'
-const handleSave = async (type) => {
-  // 如果输入了不允许输入的值，就给用户提示
-  for (const value of Object.values(form.value)) {
-    if (
-      value === "Control+Alt" ||
-      value === "Alt+Control" ||
-      value.includes("Meta")
-    ) {
-      Message.error("不允许设置  (｡•́︿•̀｡)");
-      return; // 退出整个 handleSave 函数
-    }
-  }
-  // 如果快捷键被占用了，给用户提示
-  const res = await window.electron.shortcutSetting(
-    JSON.parse(JSON.stringify(form.value))
-  );
-  if (res) {
-    Message.error("快捷键被占用  (｡•́︿•̀｡)");
-    // 把注册的快捷键先清空
-    window.electron.disableAllShortcut();
-    return;
-  }
-  // 禁用输入框
-  currentInput.value = "";
-  if (type == "fPomodoro") {
-    fPomodoroDisabled.value = true;
-  } else if (type == "wPomodoro") {
-    wPomodoroDisabled.value = true;
-  } else if (type == "fTimer") {
-    fTimerDisabled.value = true;
-  } else if (type == "wTimer") {
-    wTimerDisabled.value = true;
-  }
-  // 手动更新本地存储的值;
-  customSettingsStore.customSettings.shortcutKeys = { ...form.value };
-  Message.success("保存成功    (˃ᴗ˂)");
-};
 // 恢复默认设置
 const resetForm = () => {
   customSettingsStore.resetShortcutKeys();
@@ -135,99 +13,244 @@ const resetForm = () => {
   Message.success("重置成功🙂");
 };
 
-// 挂件位置设置
-const positionForm = ref(null);
-positionForm.value = customSettingsStore.customSettings.position;
-// 重置挂件位置表单
-const resetPositionForm = () => {
-  customSettingsStore.resetPositionSettings();
-  positionForm.value = customSettingsStore.customSettings.position;
-  // 重新渲染
+// 添加时钟设置相关的状态
+const clockForm = ref({
+  duration: 25,
+  shortBreakDuration: 5,
+  longBreakDuration: 15,
+  longBreakInterval: 4,
+});
+
+// 初始化时钟设置表单
+if (customSettingsStore.customSettings.pomodoroSettings) {
+  clockForm.value = customSettingsStore.customSettings.pomodoroSettings;
+}
+
+// 重置时钟设置表单
+const resetClockForm = () => {
+  const defaultForm = {
+    duration: 25,
+    shortBreakDuration: 5,
+    longBreakDuration: 15,
+    longBreakInterval: 4,
+  };
+  Object.assign(clockForm.value, defaultForm);
+  Message.success("时钟设置已重置🙂");
+};
+
+// 滑动栏刻度配置
+const durationMarks = {
+  15: "15",
+  25: "25",
+  35: "35",
+  45: "45",
+  55: "55",
+};
+const shortBreakDurationMarks = {
+  3: "3",
+  6: "6",
+  9: "9",
+  12: "12",
+  15: "15",
+};
+const longBreakDurationMarks = {
+  5: "5",
+  10: "10",
+  15: "15",
+  20: "20",
+  25: "25",
+};
+const longBreakIntervalMarks = {
+  2: "2",
+  3: "3",
+  4: "4",
+  5: "5",
+  6: "6",
+};
+
+// 背景图相关状态
+const fFile = ref(null);
+const wFile = ref(null);
+
+// 处理路径
+const handlePath = (originPath) => {
+  const formattedValue = originPath.replace(/\\/g, "/").replace(/\s/g, "%20");
+  return `file:///${formattedValue}`;
+};
+
+// 显示上传进度
+const onFProgress = (currentFile) => {
+  fFile.value = currentFile;
+};
+const onWProgress = (currentFile) => {
+  wFile.value = currentFile;
+};
+
+// 存储全屏背景图片
+const onFChange = (_, currentFile) => {
+  fFile.value = {
+    ...currentFile,
+  };
+  window.electron
+    .saveFile("f-pomodoro", fFile.value.file.path)
+    .then((filepath) => {
+      if (filepath) {
+        Message.success(`背景图设置成功 ٩(◕‿◕｡)۶`);
+        customSettingsStore.customSettings["f-pomodoro-bgi"] = handlePath(
+          window.electron.getAppPath() + filepath
+        );
+      }
+    })
+    .catch((error) => {
+      console.log(error);
+      Message.error("背景图设置失败 (｡•́︿•̀｡)");
+    });
+};
+
+// 存储小部件背景图
+const onWChange = (_, currentFile) => {
+  wFile.value = {
+    ...currentFile,
+  };
+  window.electron
+    .saveFile("w-pomodoro", wFile.value.file.path)
+    .then((filepath) => {
+      if (filepath) {
+        Message.success(`背景图设置成功 ٩(◕‿◕｡)۶`);
+        customSettingsStore.customSettings["w-pomodoro-bgi"] = handlePath(
+          window.electron.getAppPath() + filepath
+        );
+      }
+    })
+    .catch((error) => {
+      console.log(error);
+      Message.error("背景图设置失败 (｡•́︿•̀｡)");
+    });
+};
+
+// 重置背景图
+const resetBGI = () => {
+  customSettingsStore.resetPomodoroBGI();
   Message.success("重置成功🙂");
+  fFile.value = null;
+  wFile.value = null;
 };
 
 // 语音设置
 const voiceForm = ref(null);
 voiceForm.value = customSettingsStore.customSettings.voice;
+
 // 重置语音设置表单
 const resetVoiceForm = () => {
   customSettingsStore.resetVoiceSettings();
   voiceForm.value = customSettingsStore.customSettings.voice;
-  // 重新渲染
   Message.success("重置成功🙂");
 };
 </script>
+
 <template>
   <div class="app">
-    <!-- 全局快捷键设置 -->
-    <a-form :model="form" :style="{ width: '600px', 'margin-left': '1em' }">
-      <div
-        class="hin"
-        style="
-          width: 600px;
-          text-align: center;
-          margin: 10px 0px 20px;
-          font-size: 14px;
-          font-weight: 600;
-        "
+    <!-- 时钟设置 -->
+    <div class="section-title">时钟设置</div>
+    <a-form :model="clockForm" :style="{ width: '600px' }">
+      <a-form-item
+        field="longBreakDuration"
+        tooltip="一个番茄周期后休息的时间"
+        label="长休息"
       >
-        快捷键设置
+        <a-slider
+          v-model="clockForm.longBreakDuration"
+          :default-value="15"
+          :style="{ width: '300px' }"
+          :max="25"
+          :min="5"
+          :marks="longBreakDurationMarks"
+        />
+      </a-form-item>
+      <a-form-item
+        field="longBreakInterval"
+        tooltip="您本次专注的轮数"
+        label="番茄周期"
+      >
+        <a-slider
+          v-model="clockForm.longBreakInterval"
+          :default-value="4"
+          :style="{ width: '300px' }"
+          :max="6"
+          :min="2"
+          :marks="longBreakIntervalMarks"
+        />
+      </a-form-item>
+      <a-form-item>
+        <a-button @click="resetClockForm">恢复默认设置</a-button>
+      </a-form-item>
+    </a-form>
+
+    <a-divider></a-divider>
+
+    <!-- 背景图设置 -->
+    <div class="section-title">背景图设置</div>
+    <div class="background">
+      <div class="hint" style="color: rgb(78, 89, 105); margin: 20px 0px 0 10px">
+        更改全屏背景图：
       </div>
-      <a-form-item field="fPomodoro" label="全屏显示番茄钟">
-        <a-input v-model="form.fPomodoro" :disabled="fPomodoroDisabled" />
-        <a-button @click="handleClick('fPomodoro')" v-if="fPomodoroDisabled"
-          >开始录制</a-button
-        >
-        <a-button @click="handleSave('fPomodoro')" v-else>结束录制</a-button>
-      </a-form-item>
+      <a-upload
+        action="/"
+        :fileList="fFile ? [fFile] : []"
+        :show-file-list="false"
+        @change="onFChange"
+        @process="onFProgress"
+        :auto-upload="false"
+      >
+        <template #upload-button>
+          <div
+            :class="`arco-upload-list-item${
+              fFile && fFile.status === 'error'
+                ? ' arco-upload-list-item-error'
+                : ''
+            }`"
+          >
+            <div
+              class="arco-upload-list-picture custom-upload-avatar"
+              v-if="fFile && fFile.url"
+            >
+              <img :src="fFile.url" style="object-fit: cover" />
+              <div class="arco-upload-list-picture-mask">
+                <IconEdit />
+              </div>
+              <a-progress
+                v-if="fFile.status === 'uploading' && fFile.percent < 100"
+                :percent="fFile.percent"
+                type="circle"
+                size="mini"
+                :style="{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translateX(-50%) translateY(-50%)',
+                }"
+              />
+            </div>
+            <div class="arco-upload-picture-card" v-else>
+              <div class="arco-upload-picture-card-text">
+                <IconPlus />
+                <div style="margin-top: 10px; font-weight: 600">上传</div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </a-upload>
+      <!-- 重置背景图按钮 -->
+      <a-button @click="resetBGI" style="margin: auto 0px auto 30px"
+        >恢复默认背景</a-button
+      >
+    </div>
 
-      <a-form-item field="wPomodoro" label="召唤番茄钟挂件">
-        <a-input v-model="form.wPomodoro" :disabled="wPomodoroDisabled" />
-        <a-button @click="handleClick('wPomodoro')" v-if="wPomodoroDisabled"
-          >开始录制</a-button
-        >
-        <a-button @click="handleSave('wPomodoro')" v-else>结束录制</a-button>
-      </a-form-item>
-      <a-form-item field="fTimer" label="全屏显示计时器">
-        <a-input v-model="form.fTimer" :disabled="fTimerDisabled" />
-        <a-button @click="handleClick('fTimer')" v-if="fTimerDisabled"
-          >开始录制</a-button
-        >
-        <a-button @click="handleSave('fTimer')" v-else>结束录制</a-button>
-      </a-form-item>
-      <a-form-item field="wTimer" label="召唤计时器挂件">
-        <a-input v-model="form.wTimer" :disabled="wTimerDisabled" />
-        <a-button @click="handleClick('wTimer')" v-if="wTimerDisabled"
-          >开始录制</a-button
-        >
-        <a-button @click="handleSave('wTimer')" v-else>结束录制</a-button>
-      </a-form-item>
-      <a-form-item>
-        <a-button @click="resetForm">恢复默认设置</a-button>
-      </a-form-item>
-    </a-form>
     <a-divider></a-divider>
-    <!-- 设置倒计时、番茄钟、便签是否总是在底层 -->
-    <a-form :model="positionForm" layout="inline">
-      <a-form-item style="font-weight: 600">挂件是否在顶层设置</a-form-item>
-      <a-form-item field="positionForm.pomodoroP" label="番茄钟">
-        <a-switch v-model="positionForm.pomodoroP" />
-      </a-form-item>
 
-      <a-form-item field="positionForm.timerP" label="计时器">
-        <a-switch v-model="positionForm.timerP" />
-      </a-form-item>
-      <a-form-item field="positionForm.todoP" label="待办">
-        <a-switch v-model="positionForm.todoP" />
-      </a-form-item>
-      <a-form-item>
-        <a-button @click="resetPositionForm">恢复默认设置</a-button>
-      </a-form-item>
-    </a-form>
-    <a-divider></a-divider>
-    <!-- 设置提示语音、待办，倒计时、番茄钟 -->
+    <!-- 语音设置 -->
+    <div class="section-title">语音设置</div>
     <a-form :model="voiceForm" layout="inline">
-      <a-form-item style="font-weight: 600">提示语音设置</a-form-item>
       <a-form-item field="voiceForm.pomodoroV" label="番茄钟">
         <a-select
           size="small"
@@ -266,4 +289,32 @@ const resetVoiceForm = () => {
     </a-form>
   </div>
 </template>
-<style></style>
+
+
+<style scoped>
+.app {
+  padding: 20px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: var(--color-text-1);
+}
+
+/* 背景图设置部分样式 */
+.background {
+  display: flex;
+  margin: 40px 0px 0px 0px;
+}
+
+/* 对arco design的组件间距进行微调 */
+:deep(.arco-form-item-label-col) {
+  line-height: 60px;
+}
+
+:deep(.arco-form-item) {
+  margin-bottom: 0px;
+}
+</style>

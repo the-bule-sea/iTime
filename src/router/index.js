@@ -10,18 +10,6 @@ const router = createRouter({
       redirect: "/pomodoro",
       children: [
         {
-          path: "/plain/todo",
-          component: () => import("@/views/pc/PlainToDo.vue"),
-        },
-        {
-          path: "/add/customtodo",
-          component: () => import("@/views/pc/AddCustomToDo.vue"),
-        },
-        {
-          path: "/custom/todo",
-          component: () => import("@/views/pc/CustomToDo.vue"),
-        },
-        {
           path: "/settings",
           redirect: "/settings/global",
           component: () => import("@/views/layout/LayOutSettings.vue"),
@@ -29,19 +17,6 @@ const router = createRouter({
             {
               path: "/settings/global",
               component: () => import("@/views/settings/GlobalSettings.vue"),
-            },
-            {
-              path: "/settings/todo",
-              component: () => import("@/views/settings/ToDoSettings.vue"),
-            },
-            {
-              path: "/settings/clock",
-              component: () => import("@/views/settings/ClockSettings.vue"),
-            },
-            {
-              path: "/settings/appearance",
-              component: () =>
-                import("@/views/settings/AppearanceSettings.vue"),
             },
           ],
         },
@@ -55,28 +30,6 @@ const router = createRouter({
           component: () => import("@/views/pc/Pomodoro.vue"),
         },
       ],
-    },
-    // 桌面用的三个路径
-    {
-      path: "/desktop/customtodo",
-      component: () => import("@/views/desktop/CustomToDo.vue"),
-    },
-    {
-      path: "/desktop/timer",
-      component: () => import("@/views/desktop/Timer.vue"),
-    },
-    {
-      path: "/desktop/pomodoro",
-      component: () => import("@/views/desktop/Pomodoro.vue"),
-    },
-    // 全屏跳转的路径
-    {
-      path: "/fullscreen/timer",
-      component: () => import("@/views/fullscreen/Timer.vue"),
-    },
-    {
-      path: "/fullscreen/pomodoro",
-      component: () => import("@/views/fullscreen/Pomodoro.vue"),
     },
   ],
 });
