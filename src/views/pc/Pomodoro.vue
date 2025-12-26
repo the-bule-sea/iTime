@@ -12,10 +12,8 @@ const backgroundImage = computed(() => customSettingsStore.customSettings["f-pom
 
 // --- 卡片数据配置 ---
 const pomodoroConfigs = ref([
-  { id: 1, title: '深度专注', time: 60, icon: '🔥', bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
-  { id: 2, title: '常规番茄', time: 25, icon: '🍅', bg: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)' },
-  { id: 3, title: '短休息', time: 5, icon: '☕', bg: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)' },
-  { id: 4, title: '长休息', time: 15, icon: '🏖️', bg: 'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)' }
+  { id: 1, title: '深度专注', time: 60, icon: '🔥', bg: '#F7473E' },
+  { id: 2, title: '常规番茄', time: 25, icon: '🍅', bg: '#4C8DC7' },
 ]);
 
 // --- 计时器核心状态 ---
@@ -190,13 +188,14 @@ onUnmounted(() => {
 /* === 卡片部分样式 === */
 .card-container {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* 核心修改：使用 repeat(auto-fit, ...) 实现自动响应 */
+  /* 意思就是：每列最小300px，如果空间不够容纳两列(600px)，就自动变成一列 */
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
   gap: 20px;
   padding: 20px;
   width: 90%;
   max-width: 800px;
 }
-
 .task-card {
   height: 120px;
   border-radius: 15px;
