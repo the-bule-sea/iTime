@@ -7,7 +7,7 @@ const router = createRouter({
       // 软件主界面
       path: "/",
       component: () => import("@/views/layout/LayOutContainer.vue"), // 使用箭头函数可以懒加载
-      redirect: "/plain/todo",
+      redirect: "/pomodoro",
       children: [
         {
           path: "/plain/todo",
