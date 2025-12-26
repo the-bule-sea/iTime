@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, onUnmounted, reactive } from "vue";
 import { useCustomSettingsStore } from "@/stores/CustomSettings";
 import { Message } from "@arco-design/web-vue";
-// 引入图标：新增 IconSettings
 import {
   IconPlayArrow,
   IconPause,
@@ -17,15 +16,13 @@ const backgroundImage = computed(
   () => customSettingsStore.customSettings["f-pomodoro-bgi"]
 );
 
-// --- 卡片数据配置 (已升级数据结构) ---
+// --- 卡片数据配置 ---
 const pomodoroConfigs = ref([
-  // 增加了 shortBreak (休息时间) 字段，默认为 5 分钟
   {
     id: 1,
     title: "深度专注",
-    time: 55,
+    time: 60,
     shortBreak: 10,
-    icon: "🔥",
     bg: "#F7473E"
   },
   {
@@ -33,7 +30,6 @@ const pomodoroConfigs = ref([
     title: "常规番茄",
     time: 25,
     shortBreak: 5,
-    icon: "🍅",
     bg: "#4C8DC7"
   },
   {
@@ -41,9 +37,8 @@ const pomodoroConfigs = ref([
     title: "快速冲刺",
     time: 15,
     shortBreak: 3,
-    icon: "⚡",
     bg: "#E6A23C"
-  } // 示例
+  }
 ]);
 
 // --- 计时器核心状态 ---
@@ -57,71 +52,35 @@ let halfFirst = true;
 
 // --- 编辑弹窗状态 ---
 const settingsVisible = ref(false);
-const editForm = reactive({
-  id: -1,
-  title: "",
-  time: 25,
-  shortBreak: 5
-});
+const editForm = reactive({ id: -1, title: "", time: 25, shortBreak: 5 });
+const durationMarks = { 15: "15", 25: "25", 35: "35", 45: "45", 55: "55" };
+const shortBreakMarks = { 3: "3", 6: "6", 9: "9", 12: "12", 15: "15" };
 
-// --- 滑块刻度配置 (直接复用 ClockSettings.vue) ---
-const durationMarks = {
-  1: "1",
-  15: "15",
-  25: "25",
-  35: "35",
-  45: "45",
-  55: "55",
-  65: "65",
-  75: "75"
-};
-const shortBreakMarks = { 
-  3: "3", 
-  6: "6", 
-  9: "9", 
-  12: "12", 
-  15: "15" 
-};
-
-// --- 核心动作：打开设置弹窗 ---
+// --- 动作函数 ---
 const openSettings = item => {
-  // 回显数据到表单
   editForm.id = item.id;
   editForm.title = item.title;
   editForm.time = item.time;
-  editForm.shortBreak = item.shortBreak || 5; // 如果没设置过，给个默认值
+  editForm.shortBreak = item.shortBreak || 5;
   settingsVisible.value = true;
 };
-
-// --- 核心动作：保存设置 ---
 const handleSaveSettings = () => {
-  // 找到对应的卡片并更新数据
   const index = pomodoroConfigs.value.findIndex(p => p.id === editForm.id);
-  if (index !== -1) {
-    pomodoroConfigs.value[index].title = editForm.title;
-    pomodoroConfigs.value[index].time = editForm.time;
-    pomodoroConfigs.value[index].shortBreak = editForm.shortBreak;
-    Message.success("设置已更新");
-  }
+  if (index !== -1)
+    Object.assign(pomodoroConfigs.value[index], editForm) &&
+      Message.success("设置已更新");
   settingsVisible.value = false;
 };
-
-// --- 核心动作：选择卡片并开始 ---
 const selectCard = config => {
-  // 1. 设置时间
   originTime.value = config.time * 60;
   totalTime.value = originTime.value;
-
-  // 2. 状态重置
   percent.value = 0;
   halfFirst = true;
-
-  // 3. 切换界面并启动
   isTimerActive.value = true;
   startTimer();
 };
 
-// --- 音频播放器引用 ---
+// --- 计时器逻辑 ---
 const audioFullTimePlayer = ref(null);
 const audioHalfTimePlayer = ref(null);
 const role = computed(
@@ -130,8 +89,6 @@ const role = computed(
 const isClosed = computed(
   () => customSettingsStore.customSettings.voice.isClosedV ?? "false"
 );
-
-// --- 计算属性 ---
 const minutes = computed(() =>
   Math.floor(totalTime.value / 60)
     .toString()
@@ -141,7 +98,6 @@ const seconds = computed(() =>
   (totalTime.value % 60).toString().padStart(2, "0")
 );
 
-// --- 计时器逻辑 ---
 const startTimer = () => {
   if (intervalId === null) {
     isRunning.value = true;
@@ -167,23 +123,18 @@ const startTimer = () => {
     }, 1000);
   }
 };
-
 const pauseTimer = () => {
   clearInterval(intervalId);
   intervalId = null;
   isRunning.value = false;
 };
-
 const resetToCards = () => {
   pauseTimer();
   isTimerActive.value = false;
   totalTime.value = 0;
   percent.value = 0;
 };
-
-onUnmounted(() => {
-  clearInterval(intervalId);
-});
+onUnmounted(() => clearInterval(intervalId));
 </script>
 
 <template>
@@ -211,60 +162,56 @@ onUnmounted(() => {
       </div>
 
       <div v-else class="timer-wrapper" key="timer">
-        <div class="timer-box">
-          <a-progress
-            status="warning"
-            :percent="percent"
-            type="circle"
-            size="large"
-            :width="80"
-            color="rgb(12, 228, 140)"
-            class="timer-progress"
-          >
-            <template #text>
+        <a-progress
+          :percent="percent"
+          type="circle"
+          size="large"
+          :width="400"
+          color="rgb(12, 228, 140)"
+          class="big-timer-progress"
+        >
+          <template #text>
+            <div class="inner-timer-container">
               <div class="timer-display">{{ minutes }}:{{ seconds }}</div>
-            </template>
-          </a-progress>
-
-          <div class="controls">
-            <a-button
-              @click="isRunning ? pauseTimer() : startTimer()"
-              shape="circle"
-              size="large"
-              class="control-btn play-btn"
-            >
-              <icon-pause v-if="isRunning" size="24" />
-              <icon-play-arrow v-else size="24" />
-            </a-button>
-            <a-button
-              @click="resetToCards"
-              shape="circle"
-              size="large"
-              class="control-btn reset-btn"
-            >
-              <icon-refresh size="20" />
-            </a-button>
-          </div>
-        </div>
+              <div class="controls">
+                <a-button
+                  @click="isRunning ? pauseTimer() : startTimer()"
+                  shape="circle"
+                  size="large"
+                  class="control-btn play-btn"
+                >
+                  <icon-pause v-if="isRunning" size="24" />
+                  <icon-play-arrow v-else size="24" />
+                </a-button>
+                <a-button
+                  @click="resetToCards"
+                  shape="circle"
+                  size="large"
+                  class="control-btn reset-btn"
+                >
+                  <icon-refresh size="24" />
+                </a-button>
+              </div>
+            </div>
+          </template>
+        </a-progress>
       </div>
     </transition>
 
     <a-modal v-model:visible="settingsVisible" title="番茄钟设置" @ok="handleSaveSettings">
       <a-form :model="editForm" layout="vertical">
         <a-form-item label="标语内容 (标题)">
-          <a-input v-model="editForm.title" placeholder="请输入专注卡片的名称..." allow-clear />
+          <a-input v-model="editForm.title" placeholder="请输入名称..." allow-clear />
         </a-form-item>
-
         <a-form-item label="专注时段 (分钟)">
           <a-slider
             v-model="editForm.time"
-            :min="1"
-            :max="75"
+            :min="15"
+            :max="55"
             :marks="durationMarks"
             :style="{ width: '100%' }"
           />
         </a-form-item>
-
         <a-form-item label="短休息 (分钟)">
           <a-slider
             v-model="editForm.shortBreak"
@@ -276,8 +223,6 @@ onUnmounted(() => {
         </a-form-item>
       </a-form>
     </a-modal>
-
-    <!-- 播放音频 |时间过半|时间到|-->
     <audio
       ref="audioHalfTimePlayer"
       :src="`${currentPath}/assets/voices/timer/${role}/halfTime.wav`"
@@ -290,7 +235,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 全局容器 */
 .main {
   width: 100%;
   height: 100%;
@@ -301,8 +245,6 @@ onUnmounted(() => {
   background-position: center;
   overflow: hidden;
 }
-
-/* === 卡片样式 (模仿图1) === */
 .card-container {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -311,10 +253,9 @@ onUnmounted(() => {
   width: 90%;
   max-width: 800px;
 }
-
 .task-card {
-  height: 100px; /* 稍微调低高度，更像条幅 */
-  border-radius: 8px; /* 圆角改小一点，更像 Material Design */
+  height: 100px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.3s ease;
   display: flex;
@@ -325,19 +266,16 @@ onUnmounted(() => {
   position: relative;
   overflow: hidden;
 }
-
 .task-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
 }
-
 .card-content {
   display: flex;
   width: 100%;
   align-items: center;
   justify-content: space-between;
 }
-
 .card-info {
   flex: 1;
   text-align: left;
@@ -351,10 +289,8 @@ onUnmounted(() => {
   opacity: 0.8;
   font-size: 0.9em;
 }
-
-/* 设置按钮样式 (图1右侧深色块) */
 .settings-btn {
-  background: rgba(0, 0, 0, 0.2); /* 半透明深色背景 */
+  background: rgba(0, 0, 0, 0.2);
   padding: 8px 16px;
   border-radius: 6px;
   font-size: 0.9em;
@@ -364,12 +300,11 @@ onUnmounted(() => {
   transition: background 0.2s;
   backdrop-filter: blur(2px);
 }
-
 .settings-btn:hover {
   background: rgba(0, 0, 0, 0.4);
 }
 
-/* === 计时器样式 === */
+/* 新版计时器样式 */
 .timer-wrapper {
   display: flex;
   justify-content: center;
@@ -377,53 +312,54 @@ onUnmounted(() => {
   animation: fadeIn 0.5s ease;
 }
 
-.timer-box {
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(10px);
-  padding: 40px 60px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 30px;
-}
-
-.timer-display {
-  font-size: 3.5rem;
-  font-weight: bold;
-  color: white;
-  text-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-  line-height: 1;
-}
-
+/* 强制覆盖 Arco 圆环尺寸 */
 :deep(.arco-progress-circle) {
-  width: 200px !important;
-  height: 200px !important;
+  width: 400px !important;
+  height: 400px !important;
 }
 :deep(.arco-progress-circle-svg) {
   transform: rotate(-90deg);
 }
 
+/* 圆环内部容器布局 */
+.inner-timer-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px; 
+  margin-top: -10px; 
+}
+
+.timer-display {
+  font-size: 5.5rem; 
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  line-height: 1;
+}
+
 .controls {
   display: flex;
-  gap: 20px;
+  gap: 25px;
 }
+
 .control-btn {
-  background: transparent;
-  border: 2px solid white;
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.8);
   color: white;
-  width: 50px;
-  height: 50px;
+  width: 72px;
+  height: 72px;
   transition: all 0.2s;
+  backdrop-filter: blur(5px);
 }
 .control-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.3);
   transform: scale(1.1);
 }
 .play-btn {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
 }
 
 .fade-enter-active,
@@ -434,7 +370,6 @@ onUnmounted(() => {
 .fade-leave-to {
   opacity: 0;
 }
-
 @keyframes fadeIn {
   from {
     opacity: 0;
