@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, reactive } from "vue";
 import { useCustomSettingsStore } from "@/stores/CustomSettings";
+// 1. 引入刚才创建的 Store
+import { usePomodoroStore } from "@/stores/PomodoroStore";
 import { Message } from "@arco-design/web-vue";
 import {
   IconPlayArrow,
@@ -16,30 +18,8 @@ const backgroundImage = computed(
   () => customSettingsStore.customSettings["f-pomodoro-bgi"]
 );
 
-// --- 卡片数据配置 ---
-const pomodoroConfigs = ref([
-  {
-    id: 1,
-    title: "深度专注",
-    time: 60,
-    shortBreak: 10,
-    bg: "#F7473E"
-  },
-  {
-    id: 2,
-    title: "常规番茄",
-    time: 25,
-    shortBreak: 5,
-    bg: "#4C8DC7"
-  },
-  {
-    id: 3,
-    title: "快速冲刺",
-    time: 15,
-    shortBreak: 3,
-    bg: "#E6A23C"
-  }
-]);
+// 2. 初始化番茄钟 Store
+const pomodoroStore = usePomodoroStore();
 
 // --- 计时器核心状态 ---
 const isTimerActive = ref(false);
@@ -64,13 +44,15 @@ const openSettings = item => {
   editForm.shortBreak = item.shortBreak || 5;
   settingsVisible.value = true;
 };
+
 const handleSaveSettings = () => {
-  const index = pomodoroConfigs.value.findIndex(p => p.id === editForm.id);
-  if (index !== -1)
-    Object.assign(pomodoroConfigs.value[index], editForm) &&
-      Message.success("设置已更新");
+  // 3. 调用 Store 的方法来保存，而不是直接改本地数组
+  // 虽然 Pinia 允许直接改 state，但用 action 更规范
+  pomodoroStore.updateConfig(editForm);
+  Message.success("设置已更新");
   settingsVisible.value = false;
 };
+
 const selectCard = config => {
   originTime.value = config.time * 60;
   totalTime.value = originTime.value;
@@ -80,7 +62,7 @@ const selectCard = config => {
   startTimer();
 };
 
-// --- 计时器逻辑 ---
+// --- 计时器逻辑 (保持不变) ---
 const audioFullTimePlayer = ref(null);
 const audioHalfTimePlayer = ref(null);
 const role = computed(
@@ -142,7 +124,7 @@ onUnmounted(() => clearInterval(intervalId));
     <transition name="fade" mode="out-in">
       <div v-if="!isTimerActive" class="card-container" key="cards">
         <div
-          v-for="item in pomodoroConfigs"
+          v-for="item in pomodoroStore.configs"
           :key="item.id"
           class="task-card"
           :style="{ background: item.bg }"
