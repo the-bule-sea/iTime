@@ -7,24 +7,24 @@ export const usePomodoroStore = defineStore('pomodoro-data', {
     configs: [
       {
         id: 1,
-        title: "深度专注",
+        title: "点击设置即可修改配置",
         time: 60,
         shortBreak: 10,
-        bg: "#F7473E"
+        bg: "#FFD3B6"
       },
       {
         id: 2,
         title: "常规番茄",
         time: 25,
         shortBreak: 5,
-        bg: "#4C8DC7"
+        bg: "#B39DDB"
       },
       {
         id: 3,
         title: "快速冲刺",
         time: 15,
         shortBreak: 3,
-        bg: "#E6A23C"
+        bg: "#AED581"
       }
     ]
   }),

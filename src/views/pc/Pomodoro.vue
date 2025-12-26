@@ -1,14 +1,16 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, reactive } from "vue";
 import { useCustomSettingsStore } from "@/stores/CustomSettings";
-// 1. 引入刚才创建的 Store
 import { usePomodoroStore } from "@/stores/PomodoroStore";
-import { Message } from "@arco-design/web-vue";
+import { Message, Modal } from "@arco-design/web-vue";
 import {
   IconPlayArrow,
   IconPause,
   IconRefresh,
-  IconSettings
+  IconSettings,
+  IconEdit,
+  IconPlus,
+  IconClose
 } from "@arco-design/web-vue/es/icon";
 
 // --- 基础配置与 Store ---
@@ -18,7 +20,7 @@ const backgroundImage = computed(
   () => customSettingsStore.customSettings["f-pomodoro-bgi"]
 );
 
-// 2. 初始化番茄钟 Store
+// 初始化番茄钟 Store
 const pomodoroStore = usePomodoroStore();
 
 // --- 计时器核心状态 ---
@@ -30,13 +32,58 @@ const originTime = ref(0);
 let intervalId = null;
 let halfFirst = true;
 
+// --- 模式控制状态 ---
+const isEditMode = ref(false); // 是否处于“删除模式”
+
 // --- 编辑弹窗状态 ---
 const settingsVisible = ref(false);
+// 默认背景色池，新增时随机取一个
+const colorPalette = [
+  "#AAB7B8", // 灰蓝
+  "#B2BEB5", // 灰绿
+  "#D8C3A5", // 杏色
+  "#C3B1E1", // 淡紫
+  "#A8E6CF", // 薄荷绿
+  "#DCEDC1", // 浅绿
+  "#FFD3B6", // 蜜桃色
+  "#FFAAA5", // 珊瑚粉
+  "#FF8B94", // 柔和红
+  "#B39DDB", // 薰衣草紫
+  "#9FA8DA", // 柔和蓝
+  "#90CAF9", // 天空蓝
+  "#81D4FA", // 淡蓝
+  "#80DEEA", // 青色
+  "#4DD0E1", // 青绿
+  "#4DB6AC", // 青绿
+  "#81C784", // 柔和绿
+  "#AED581", // 柠檬绿
+  "#DCE775", // 浅黄绿
+  "#FFF59D" // 柔和黄
+];
+
 const editForm = reactive({ id: -1, title: "", time: 25, shortBreak: 5 });
 const durationMarks = { 15: "15", 25: "25", 35: "35", 45: "45", 55: "55" };
 const shortBreakMarks = { 3: "3", 6: "6", 9: "9", 12: "12", 15: "15" };
 
-// --- 动作函数 ---
+const toggleEditMode = () => {
+  if (isEditMode.value) {
+    // 如果已经在编辑模式，点击按钮则视为“新增”
+    openAddModal();
+  } else {
+    // 进入编辑模式（显示删除按钮，FAB 变为 + 号）
+    isEditMode.value = true;
+    Message.info("已进入编辑模式，点击 X 删除卡片，点击右下角 + 新增");
+  }
+};
+
+const openAddModal = () => {
+  editForm.id = -1; // 标记为新增
+  editForm.title = "";
+  editForm.time = 25;
+  editForm.shortBreak = 5;
+  settingsVisible.value = true;
+};
+
 const openSettings = item => {
   editForm.id = item.id;
   editForm.title = item.title;
@@ -46,14 +93,61 @@ const openSettings = item => {
 };
 
 const handleSaveSettings = () => {
-  // 3. 调用 Store 的方法来保存，而不是直接改本地数组
-  // 虽然 Pinia 允许直接改 state，但用 action 更规范
-  pomodoroStore.updateConfig(editForm);
-  Message.success("设置已更新");
+  if (!editForm.title) {
+    Message.warning("请输入标题");
+    return;
+  }
+
+  if (editForm.id === -1) {
+    // 新增逻辑
+    const newId = Date.now(); // 简单生成唯一ID
+    const randomColor =
+      colorPalette[Math.floor(Math.random() * colorPalette.length)];
+    pomodoroStore.configs.push({
+      id: newId,
+      title: editForm.title,
+      time: editForm.time,
+      shortBreak: editForm.shortBreak,
+      bg: randomColor
+    });
+    Message.success("新增成功");
+    // 新增完退出编辑模式
+    isEditMode.value = false;
+  } else {
+    // 修改逻辑
+    pomodoroStore.updateConfig(editForm);
+    Message.success("设置已更新");
+  }
   settingsVisible.value = false;
 };
 
+const deleteCard = item => {
+  Modal.warning({
+    title: "确认删除",
+    content: `确定要删除 ${item.title} 吗？`,
+    onOk: () => {
+      const index = pomodoroStore.configs.findIndex(i => i.id === item.id);
+      if (index !== -1) {
+        pomodoroStore.configs.splice(index, 1);
+        Message.success("已删除");
+        // 如果删完了，自动退出编辑模式
+        if (pomodoroStore.configs.length === 0) isEditMode.value = false;
+      }
+    }
+  });
+};
+
+const handleBackgroundClick = e => {
+  // 只有点击背景容器本身才退出，点击卡片或按钮不退出
+  if (isEditMode.value && e.target.classList.contains("card-container")) {
+    isEditMode.value = false;
+  }
+};
+
 const selectCard = config => {
+  // 编辑模式下点击卡片不触发计时，只允许删除操作
+  if (isEditMode.value) return;
+
   originTime.value = config.time * 60;
   totalTime.value = originTime.value;
   percent.value = 0;
@@ -120,13 +214,18 @@ onUnmounted(() => clearInterval(intervalId));
 </script>
 
 <template>
-  <div class="main" :style="{ backgroundImage: `url(${backgroundImage})` }">
+  <div
+    class="main"
+    :style="{ backgroundImage: `url(${backgroundImage})` }"
+    @click="handleBackgroundClick"
+  >
     <transition name="fade" mode="out-in">
       <div v-if="!isTimerActive" class="card-container" key="cards">
         <div
           v-for="item in pomodoroStore.configs"
           :key="item.id"
           class="task-card"
+          :class="{ 'shake-animation': isEditMode }"
           :style="{ background: item.bg }"
           @click="selectCard(item)"
         >
@@ -135,9 +234,14 @@ onUnmounted(() => clearInterval(intervalId));
               <div class="card-title">{{ item.title }}</div>
               <div class="card-time">{{ item.time }} min</div>
             </div>
-            <div class="settings-btn" @click.stop="openSettings(item)">
+
+            <div v-if="!isEditMode" class="settings-btn" @click.stop="openSettings(item)">
               设置
               <icon-settings />
+            </div>
+
+            <div v-else class="delete-btn" @click.stop="deleteCard(item)">
+              <icon-close />
             </div>
           </div>
         </div>
@@ -180,10 +284,21 @@ onUnmounted(() => clearInterval(intervalId));
       </div>
     </transition>
 
-    <a-modal v-model:visible="settingsVisible" title="番茄钟设置" @ok="handleSaveSettings">
+    <div v-if="!isTimerActive" class="fab-btn" @click.stop="toggleEditMode">
+      <transition name="rotate">
+        <icon-plus v-if="isEditMode" size="30" />
+        <icon-edit v-else size="30" />
+      </transition>
+    </div>
+
+    <a-modal
+      v-model:visible="settingsVisible"
+      :title="editForm.id === -1 ? '新增专注卡片' : '卡片设置'"
+      @ok="handleSaveSettings"
+    >
       <a-form :model="editForm" layout="vertical">
         <a-form-item label="标语内容 (标题)">
-          <a-input v-model="editForm.title" placeholder="请输入名称..." allow-clear />
+          <a-input v-model="editForm.title" placeholder="请输入名称..." allow-clear maxlength="10" />
         </a-form-item>
         <a-form-item label="专注时段 (分钟)">
           <a-slider
@@ -205,13 +320,14 @@ onUnmounted(() => clearInterval(intervalId));
         </a-form-item>
       </a-form>
     </a-modal>
+
     <audio
       ref="audioHalfTimePlayer"
-      :src="`${currentPath}/assets/voices/timer/${role}/halfTime.wav`"
+      :src="`currentPath/assets/voices/timer/{currentPath}/assets/voices/timer/currentPath/assets/voices/timer/{role}/halfTime.wav`"
     ></audio>
     <audio
       ref="audioFullTimePlayer"
-      :src="`${currentPath}/assets/voices/timer/${role}/fullTime.wav`"
+      :src="`currentPath/assets/voices/timer/{currentPath}/assets/voices/timer/currentPath/assets/voices/timer/{role}/fullTime.wav`"
     ></audio>
   </div>
 </template>
@@ -226,6 +342,7 @@ onUnmounted(() => clearInterval(intervalId));
   background-size: cover;
   background-position: center;
   overflow: hidden;
+  position: relative; /* 为FAB定位 */
 }
 .card-container {
   display: grid;
@@ -234,6 +351,8 @@ onUnmounted(() => clearInterval(intervalId));
   padding: 20px;
   width: 90%;
   max-width: 800px;
+  min-height: 50vh;
+  align-content: start;
 }
 .task-card {
   height: 100px;
@@ -252,6 +371,30 @@ onUnmounted(() => clearInterval(intervalId));
   transform: translateY(-2px);
   box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
 }
+
+/* 抖动动画 (iOS删除模式风格) */
+@keyframes shake {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(1deg);
+  }
+  50% {
+    transform: rotate(0deg);
+  }
+  75% {
+    transform: rotate(-1deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+.shake-animation {
+  animation: shake 0.3s infinite ease-in-out;
+  cursor: default;
+}
+
 .card-content {
   display: flex;
   width: 100%;
@@ -271,6 +414,8 @@ onUnmounted(() => clearInterval(intervalId));
   opacity: 0.8;
   font-size: 0.9em;
 }
+
+/* 设置按钮 */
 .settings-btn {
   background: rgba(0, 0, 0, 0.2);
   padding: 8px 16px;
@@ -286,15 +431,62 @@ onUnmounted(() => clearInterval(intervalId));
   background: rgba(0, 0, 0, 0.4);
 }
 
-/* 新版计时器样式 */
+/* 删除按钮 (红色圆形) */
+.delete-btn {
+  background: rgba(255, 0, 0, 0.7);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.delete-btn:hover {
+  background: red;
+  transform: scale(1.1);
+}
+
+/* 悬浮操作按钮 (FAB) */
+.fab-btn {
+  position: absolute;
+  bottom: 40px;
+  right: 40px;
+  width: 60px;
+  height: 60px;
+  background-color: #409eff; /* 蓝色主题 */
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 4px 15px rgba(64, 158, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 100;
+}
+.fab-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 8px 25px rgba(64, 158, 255, 0.6);
+}
+/* 按钮图标旋转动画 */
+.rotate-enter-active,
+.rotate-leave-active {
+  transition: all 0.2s ease;
+}
+.rotate-enter-from,
+.rotate-leave-to {
+  opacity: 0;
+  transform: rotate(90deg);
+}
+
+/* 计时器相关样式 (保持不变) */
 .timer-wrapper {
   display: flex;
   justify-content: center;
   align-items: center;
   animation: fadeIn 0.5s ease;
 }
-
-/* 强制覆盖 Arco 圆环尺寸 */
 :deep(.arco-progress-circle) {
   width: 400px !important;
   height: 400px !important;
@@ -302,30 +494,25 @@ onUnmounted(() => clearInterval(intervalId));
 :deep(.arco-progress-circle-svg) {
   transform: rotate(-90deg);
 }
-
-/* 圆环内部容器布局 */
 .inner-timer-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 30px; 
-  margin-top: -10px; 
+  gap: 30px;
+  margin-top: -10px;
 }
-
 .timer-display {
-  font-size: 5.5rem; 
+  font-size: 5.5rem;
   font-weight: bold;
   color: white;
   text-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
   line-height: 1;
 }
-
 .controls {
   display: flex;
   gap: 25px;
 }
-
 .control-btn {
   background: rgba(255, 255, 255, 0.15);
   border: 2px solid rgba(255, 255, 255, 0.8);
