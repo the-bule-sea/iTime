@@ -43,6 +43,23 @@ export const useStatisticsStore = defineStore('statistics-data', {
       }));
     },
 
+    // 4.1 按月统计的专注内容分布 (用于饼图)
+    categoryDistributionByMonth: (state) => (monthStr) => {
+      const map = {};
+      state.history.forEach(item => {
+        const itemMonth = dayjs(item.startTime).format('YYYY-MM');
+        if (itemMonth === monthStr) {
+          if (!map[item.cardTitle]) map[item.cardTitle] = 0;
+          map[item.cardTitle] += item.duration;
+        }
+      });
+      // 转换为 ECharts 需要的格式 { name: '深度专注', value: 120 }
+      return Object.keys(map).map(key => ({
+        name: key,
+        value: map[key]
+      }));
+    },
+
     // 5. 近7天趋势 (用于折线图)
     last7DaysTrend: (state) => {
       const days = [];

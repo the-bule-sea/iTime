@@ -193,7 +193,11 @@ const currentRouteKey = computed(() => {
 }
 /* 定义内容距离顶部间距*/
 .content {
-  margin-top: 1.5em;
+  /* 加上这几行： */
+  height: 100vh;         /* 强制占满全屏高度 */
+  overflow: hidden;      /* 核心：超出部分直接剪裁，不再出滚动条 */
+  background-color: #f7f8fa; /* 可选：给个背景色，防止白边 */
+  box-sizing: border-box;
 }
 
 /* 隐藏溢出的东西 */

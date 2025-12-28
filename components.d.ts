@@ -28,6 +28,7 @@ declare module 'vue' {
     AMenu: typeof import('@arco-design/web-vue')['Menu']
     AMenuItem: typeof import('@arco-design/web-vue')['MenuItem']
     AModal: typeof import('@arco-design/web-vue')['Modal']
+    AMonthPicker: typeof import('@arco-design/web-vue')['MonthPicker']
     AOption: typeof import('@arco-design/web-vue')['Option']
     AProgress: typeof import('@arco-design/web-vue')['Progress']
     ASelect: typeof import('@arco-design/web-vue')['Select']
