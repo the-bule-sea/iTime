@@ -29,6 +29,10 @@ const router = createRouter({
           path: "/pomodoro",
           component: () => import("@/views/pc/Pomodoro.vue"),
         },
+        {
+          path: "/statistics",
+          component: () => import("@/views/pc/Statistics.vue"),
+        }
       ],
     },
   ],

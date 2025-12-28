@@ -74,6 +74,35 @@ const currentRouteKey = computed(() => {
                   番茄钟
                 </a-menu-item>
               </router-link>
+              <router-link to="/statistics">
+                <a-menu-item
+                  key="/statistics"
+                  :class="{ highlight: currentRouteKey === '/statistics' }"
+                >
+                  <template #icon>
+                    <svg
+                      viewBox="0 0 32 32"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="icon"
+                      width="1em"
+                      height="1em"
+                    >
+                      <g fill="currentColor">
+                        <path
+                          d="m19 8h-6a1 1 0 0 0 -1 1v14a1 1 0 0 0 2 0v-13h4v19h-4v-3a1 1 0 0 0 -2 0v4a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-21a1 1 0 0 0 -1-1z"
+                        />
+                        <path
+                          d="m8 15h-6a1 1 0 0 0 -1 1v14a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-8a1 1 0 0 0 -2 0v7h-4v-12h4v1a1 1 0 0 0 2 0v-2a1 1 0 0 0 -1-1z"
+                        />
+                        <path
+                          d="m30 13a1 1 0 0 0 1-1v-10a1 1 0 0 0 -1-1h-6a1 1 0 0 0 -1 1v28a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-14a1 1 0 0 0 -2 0v13h-4v-26h4v9a1 1 0 0 0 1 1z"
+                        />
+                      </g>
+                    </svg>
+                  </template>
+                  统计数据
+                </a-menu-item>
+              </router-link>
               <a-divider margin="10px" />
               <router-link to="/settings">
                 <a-menu-item

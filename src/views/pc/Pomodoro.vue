@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, reactive } from "vue";
 import { useCustomSettingsStore } from "@/stores/CustomSettings";
+import { useStatisticsStore } from "@/stores/StatisticsStore";
 import { usePomodoroStore } from "@/stores/PomodoroStore";
 import { Message, Modal } from "@arco-design/web-vue";
 import {
@@ -8,13 +9,13 @@ import {
   IconPause,
   IconRefresh,
   IconSettings,
-  IconEdit,
-  IconPlus,
   IconClose
 } from "@arco-design/web-vue/es/icon";
 
 // --- 基础配置与 Store ---
 const customSettingsStore = useCustomSettingsStore();
+const statisticsStore = useStatisticsStore();
+const currentCard = ref(null);
 const currentPath = window.electron.getAppPath();
 const backgroundImage = computed(
   () => customSettingsStore.customSettings["f-pomodoro-bgi"]
@@ -33,22 +34,21 @@ let intervalId = null;
 let halfFirst = true;
 
 // --- 模式控制状态 ---
-const isEditMode = ref(false); // 是否处于“删除模式”
+const isEditMode = ref(false); // false=显示编辑图标, true=显示新增图标
 
 // --- 编辑弹窗状态 ---
 const settingsVisible = ref(false);
-// 默认背景色池，新增时随机取一个
 const colorPalette = [
   "#AAB7B8", // 灰蓝
   "#B2BEB5", // 灰绿
-  "#D8C3A5", // 杏色
+  "#FFAAA5", // 珊瑚粉
   "#C3B1E1", // 淡紫
   "#A8E6CF", // 薄荷绿
   "#DCEDC1", // 浅绿
   "#FFD3B6", // 蜜桃色
-  "#FFAAA5", // 珊瑚粉
   "#FF8B94", // 柔和红
   "#B39DDB", // 薰衣草紫
+  "#D8C3A5", // 杏色
   "#9FA8DA", // 柔和蓝
   "#90CAF9", // 天空蓝
   "#81D4FA", // 淡蓝
@@ -60,30 +60,32 @@ const colorPalette = [
   "#DCE775", // 浅黄绿
   "#FFF59D" // 柔和黄
 ];
-
 const editForm = reactive({ id: -1, title: "", time: 25, shortBreak: 5 });
 const durationMarks = { 15: "15", 25: "25", 35: "35", 45: "45", 55: "55" };
 const shortBreakMarks = { 3: "3", 6: "6", 9: "9", 12: "12", 15: "15" };
 
+// --- 动作函数 ---
+
+// 1. 切换编辑模式 / 触发新增
 const toggleEditMode = () => {
   if (isEditMode.value) {
-    // 如果已经在编辑模式，点击按钮则视为“新增”
     openAddModal();
   } else {
-    // 进入编辑模式（显示删除按钮，FAB 变为 + 号）
     isEditMode.value = true;
     Message.info("已进入编辑模式，点击 X 删除卡片，点击右下角 + 新增");
   }
 };
 
+// 2. 打开新增弹窗
 const openAddModal = () => {
-  editForm.id = -1; // 标记为新增
+  editForm.id = -1;
   editForm.title = "";
   editForm.time = 25;
   editForm.shortBreak = 5;
   settingsVisible.value = true;
 };
 
+// 3. 打开设置弹窗（修改现有）
 const openSettings = item => {
   editForm.id = item.id;
   editForm.title = item.title;
@@ -92,6 +94,7 @@ const openSettings = item => {
   settingsVisible.value = true;
 };
 
+// 4. 保存设置
 const handleSaveSettings = () => {
   if (!editForm.title) {
     Message.warning("请输入标题");
@@ -99,8 +102,7 @@ const handleSaveSettings = () => {
   }
 
   if (editForm.id === -1) {
-    // 新增逻辑
-    const newId = Date.now(); // 简单生成唯一ID
+    const newId = Date.now();
     const randomColor =
       colorPalette[Math.floor(Math.random() * colorPalette.length)];
     pomodoroStore.configs.push({
@@ -111,16 +113,15 @@ const handleSaveSettings = () => {
       bg: randomColor
     });
     Message.success("新增成功");
-    // 新增完退出编辑模式
     isEditMode.value = false;
   } else {
-    // 修改逻辑
     pomodoroStore.updateConfig(editForm);
     Message.success("设置已更新");
   }
   settingsVisible.value = false;
 };
 
+// 5. 删除卡片
 const deleteCard = item => {
   Modal.warning({
     title: "确认删除",
@@ -130,24 +131,23 @@ const deleteCard = item => {
       if (index !== -1) {
         pomodoroStore.configs.splice(index, 1);
         Message.success("已删除");
-        // 如果删完了，自动退出编辑模式
         if (pomodoroStore.configs.length === 0) isEditMode.value = false;
       }
     }
   });
 };
 
+// 6. 退出编辑模式
 const handleBackgroundClick = e => {
-  // 只有点击背景容器本身才退出，点击卡片或按钮不退出
+  // 确保点击的不是FAB按钮本身才退出
   if (isEditMode.value && e.target.classList.contains("card-container")) {
     isEditMode.value = false;
   }
 };
 
 const selectCard = config => {
-  // 编辑模式下点击卡片不触发计时，只允许删除操作
   if (isEditMode.value) return;
-
+  currentCard.value = config;
   originTime.value = config.time * 60;
   totalTime.value = originTime.value;
   percent.value = 0;
@@ -193,6 +193,13 @@ const startTimer = () => {
         intervalId = null;
         isRunning.value = false;
         percent.value = 1;
+        if (currentCard.value) {
+          statisticsStore.addRecord({
+            cardTitle: currentCard.value.title,
+            duration: currentCard.value.time, // 记录设定的时长（分钟）
+            type: "focus"
+          });
+        }
         !isClosed.value && audioFullTimePlayer.value?.play();
         window.electron.notificationUser("timer-full");
       }
@@ -234,12 +241,10 @@ onUnmounted(() => clearInterval(intervalId));
               <div class="card-title">{{ item.title }}</div>
               <div class="card-time">{{ item.time }} min</div>
             </div>
-
             <div v-if="!isEditMode" class="settings-btn" @click.stop="openSettings(item)">
               设置
               <icon-settings />
             </div>
-
             <div v-else class="delete-btn" @click.stop="deleteCard(item)">
               <icon-close />
             </div>
@@ -284,12 +289,27 @@ onUnmounted(() => clearInterval(intervalId));
       </div>
     </transition>
 
-    <div v-if="!isTimerActive" class="fab-btn" @click.stop="toggleEditMode">
-      <transition name="rotate">
-        <icon-plus v-if="isEditMode" size="30" />
-        <icon-edit v-else size="30" />
-      </transition>
-    </div>
+    <label v-if="!isTimerActive" class="fab-container" @click.prevent.stop="toggleEditMode">
+      <input type="checkbox" :checked="isEditMode" />
+
+      <svg
+        class="icon-edit"
+        xmlns="http://www.w3.org/2000/svg"
+        width="100"
+        height="1em"
+        viewBox="0 0 30 30"
+      >
+        <path
+          d="M 22.828125 3 C 22.316375 3 21.804562 3.1954375 21.414062 3.5859375 L 19 6 L 24 11 L 26.414062 8.5859375 C 27.195062 7.8049375 27.195062 6.5388125 26.414062 5.7578125 L 24.242188 3.5859375 C 23.851688 3.1954375 23.339875 3 22.828125 3 z M 17 8 L 5.2597656 19.740234 C 5.2597656 19.740234 6.1775313 19.658 6.5195312 20 C 6.8615312 20.342 6.58 22.58 7 23 C 7.42 23.42 9.6438906 23.124359 9.9628906 23.443359 C 10.281891 23.762359 10.259766 24.740234 10.259766 24.740234 L 22 13 L 17 8 z M 4 23 L 3.0566406 25.671875 A 1 1 0 0 0 3 26 A 1 1 0 0 0 4 27 A 1 1 0 0 0 4.328125 26.943359 A 1 1 0 0 0 4.3378906 26.939453 L 4.3632812 26.931641 A 1 1 0 0 0 4.3691406 26.927734 L 7 26 L 5.5 24.5 L 4 23 z"
+        />
+      </svg>
+
+      <svg class="icon-add" xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 448 512">
+        <path
+          d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"
+        />
+      </svg>
+    </label>
 
     <a-modal
       v-model:visible="settingsVisible"
@@ -298,7 +318,7 @@ onUnmounted(() => clearInterval(intervalId));
     >
       <a-form :model="editForm" layout="vertical">
         <a-form-item label="标语内容 (标题)">
-          <a-input v-model="editForm.title" placeholder="请输入名称..." allow-clear maxlength="10" />
+          <a-input v-model="editForm.title" placeholder="请输入名称..." allow-clear />
         </a-form-item>
         <a-form-item label="专注时段 (分钟)">
           <a-slider
@@ -342,7 +362,7 @@ onUnmounted(() => clearInterval(intervalId));
   background-size: cover;
   background-position: center;
   overflow: hidden;
-  position: relative; /* 为FAB定位 */
+  position: relative;
 }
 .card-container {
   display: grid;
@@ -371,8 +391,6 @@ onUnmounted(() => clearInterval(intervalId));
   transform: translateY(-2px);
   box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
 }
-
-/* 抖动动画 (iOS删除模式风格) */
 @keyframes shake {
   0% {
     transform: rotate(0deg);
@@ -394,7 +412,6 @@ onUnmounted(() => clearInterval(intervalId));
   animation: shake 0.3s infinite ease-in-out;
   cursor: default;
 }
-
 .card-content {
   display: flex;
   width: 100%;
@@ -414,8 +431,6 @@ onUnmounted(() => clearInterval(intervalId));
   opacity: 0.8;
   font-size: 0.9em;
 }
-
-/* 设置按钮 */
 .settings-btn {
   background: rgba(0, 0, 0, 0.2);
   padding: 8px 16px;
@@ -430,8 +445,6 @@ onUnmounted(() => clearInterval(intervalId));
 .settings-btn:hover {
   background: rgba(0, 0, 0, 0.4);
 }
-
-/* 删除按钮 (红色圆形) */
 .delete-btn {
   background: rgba(255, 0, 0, 0.7);
   width: 36px;
@@ -447,40 +460,78 @@ onUnmounted(() => clearInterval(intervalId));
   transform: scale(1.1);
 }
 
-/* 悬浮操作按钮 (FAB) */
-.fab-btn {
+/* === 新版 SVG 动画 FAB 按钮样式 === */
+.fab-container {
+  /* 基础定位和样式 (继承自原先的蓝色圆形按钮) */
   position: absolute;
   bottom: 40px;
   right: 40px;
   width: 60px;
   height: 60px;
-  background-color: #409eff; /* 蓝色主题 */
+  background-color: #409eff;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
   box-shadow: 0 4px 15px rgba(64, 158, 255, 0.4);
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   z-index: 100;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+  /* Flex 布局用于居中 SVG */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  /* SVG 基础设置 */
+  font-size: 30px; /* 控制图标大小 */
+  fill: white; /* 图标颜色 */
+  user-select: none;
 }
-.fab-btn:hover {
+
+/* 整体 Hover 效果 */
+.fab-container:hover {
   transform: scale(1.1);
   box-shadow: 0 8px 25px rgba(64, 158, 255, 0.6);
 }
-/* 按钮图标旋转动画 */
-.rotate-enter-active,
-.rotate-leave-active {
-  transition: all 0.2s ease;
-}
-.rotate-enter-from,
-.rotate-leave-to {
+
+/* 隐藏 input checkbox */
+.fab-container input {
+  position: absolute;
   opacity: 0;
-  transform: rotate(90deg);
+  cursor: pointer;
+  height: 0;
+  width: 0;
 }
 
-/* 计时器相关样式 (保持不变) */
+/* SVG 动画逻辑 */
+.fab-container .icon-edit {
+  position: absolute;
+  animation: keyframes-fill 0.3s;
+}
+.fab-container .icon-add {
+  position: absolute;
+  display: none;
+  animation: keyframes-fill 0.3s;
+}
+
+/* 根据 checkbox 状态切换显示 */
+.fab-container input:checked ~ .icon-edit {
+  display: none;
+}
+.fab-container input:checked ~ .icon-add {
+  display: block;
+}
+
+/* 动画关键帧 */
+@keyframes keyframes-fill {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* 计时器样式 (保持不变) */
 .timer-wrapper {
   display: flex;
   justify-content: center;
@@ -530,7 +581,6 @@ onUnmounted(() => clearInterval(intervalId));
   width: 72px;
   height: 72px;
 }
-
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;

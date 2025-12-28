@@ -107,27 +107,6 @@ const onFChange = (_, currentFile) => {
     });
 };
 
-// 存储小部件背景图
-const onWChange = (_, currentFile) => {
-  wFile.value = {
-    ...currentFile,
-  };
-  window.electron
-    .saveFile("w-pomodoro", wFile.value.file.path)
-    .then((filepath) => {
-      if (filepath) {
-        Message.success(`背景图设置成功 ٩(◕‿◕｡)۶`);
-        customSettingsStore.customSettings["w-pomodoro-bgi"] = handlePath(
-          window.electron.getAppPath() + filepath
-        );
-      }
-    })
-    .catch((error) => {
-      console.log(error);
-      Message.error("背景图设置失败 (｡•́︿•̀｡)");
-    });
-};
-
 // 重置背景图
 const resetBGI = () => {
   customSettingsStore.resetPomodoroBGI();

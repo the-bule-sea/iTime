@@ -70,6 +70,7 @@
     "@arco-design/web-vue": "^2.54.3",
     "@vueup/vue-quill": "^1.2.0",
     "dayjs": "^1.11.10",
+    "echarts": "^6.0.0",
     "electron-is-dev": "^3.0.1",
     "electron-win-state": "^1.1.22",
     "pinia": "^2.1.7",
@@ -77,6 +78,7 @@
     "unplugin-vue-components": "^0.26.0",
     "uuid": "^9.0.1",
     "vue": "^3.3.11",
+    "vue-echarts": "^8.0.1",
     "vue-router": "^4.2.5"
   },
   "devDependencies": {
