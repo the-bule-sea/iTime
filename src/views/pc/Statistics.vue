@@ -145,6 +145,8 @@ const lineOption = computed(() => {
       </div>
 
     </div>
+
+    <!-- <button @click="statsStore.clearData()">删除所有数据</button> -->
   </div>
 </template>
 

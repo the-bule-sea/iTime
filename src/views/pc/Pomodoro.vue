@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, reactive } from "vue";
+import { ref, computed, onMounted, onUnmounted, reactive, watch } from "vue";
 import { useCustomSettingsStore } from "@/stores/CustomSettings";
 import { useStatisticsStore } from "@/stores/StatisticsStore";
 import { usePomodoroStore } from "@/stores/PomodoroStore";
@@ -15,7 +15,6 @@ import {
 // --- 基础配置与 Store ---
 const customSettingsStore = useCustomSettingsStore();
 const statisticsStore = useStatisticsStore();
-const currentCard = ref(null);
 const currentPath = window.electron.getAppPath();
 const backgroundImage = computed(
   () => customSettingsStore.customSettings["f-pomodoro-bgi"]
@@ -24,59 +23,124 @@ const backgroundImage = computed(
 // 初始化番茄钟 Store
 const pomodoroStore = usePomodoroStore();
 
+// --- 全局设置 (读取长休息配置) ---
+const globalSettings = computed(() => {
+  return (
+    customSettingsStore.customSettings.pomodoroSettings || {
+      longBreakDuration: 15,
+      longBreakInterval: 4
+    }
+  );
+});
+
+// --- 休息语录轮播 ---
+const restQuotes = ref([
+  "上厕所",
+  "喝水",
+  "Dream it possible",
+  "不管怎么样，明天又是新的一天",
+  "你很棒，坚持下去",
+  "休息是为了更好的前进",
+  "累了困了，站起来走走",
+  "只要不停下脚步，道路就会...不断延伸！",
+  "今天也要加油哦",
+  "再喝一口水",
+]);
+const currentQuoteIndex = ref(0);
+let quoteIntervalId = null;
+
+// 开始轮播语录
+const startQuoteRotation = () => {
+  if (quoteIntervalId) clearInterval(quoteIntervalId);
+  quoteIntervalId = setInterval(() => {
+    currentQuoteIndex.value =
+      (currentQuoteIndex.value + 1) % restQuotes.value.length;
+  }, 60000);
+};
+
+// 停止轮播语录
+const stopQuoteRotation = () => {
+  if (quoteIntervalId) {
+    clearInterval(quoteIntervalId);
+    quoteIntervalId = null;
+  }
+  currentQuoteIndex.value = 0;
+};
+
 // --- 计时器核心状态 ---
-const isTimerActive = ref(false);
-const isRunning = ref(false);
+const isTimerActive = ref(false); // 是否在倒计时界面
+const isRunning = ref(false); // 是否正在读秒
 const percent = ref(0);
 const totalTime = ref(0);
 const originTime = ref(0);
 let intervalId = null;
 let halfFirst = true;
 
-// --- 模式控制状态 ---
-const isEditMode = ref(false); // false=显示编辑图标, true=显示新增图标
+// --- 核心逻辑状态 (新加) ---
+const currentCard = ref(null); // 当前选中的卡片数据
+const cycleCount = ref(0); // 当前已完成的番茄数
+// 阶段状态: 'focus'(专注), 'shortBreak'(短休), 'longBreak'(长休)
+const currentPhase = ref("focus");
 
-// --- 编辑弹窗状态 ---
+// 计算当前阶段的提示文案
+const phaseTip = computed(() => {
+  // if (currentPhase.value === "focus") return "专注中";
+  if (currentPhase.value === "shortBreak") return "短休息";
+  if (currentPhase.value === "longBreak") return "长休息";
+  return "";
+});
+
+// --- 模式控制状态 ---
+const isEditMode = ref(false);
 const settingsVisible = ref(false);
 const colorPalette = [
-  "#AAB7B8", // 灰蓝
-  "#B2BEB5", // 灰绿
-  "#FFAAA5", // 珊瑚粉
-  "#C3B1E1", // 淡紫
-  "#A8E6CF", // 薄荷绿
-  "#DCEDC1", // 浅绿
-  "#FFD3B6", // 蜜桃色
-  "#FF8B94", // 柔和红
-  "#B39DDB", // 薰衣草紫
-  "#D8C3A5", // 杏色
-  "#9FA8DA", // 柔和蓝
-  "#90CAF9", // 天空蓝
-  "#81D4FA", // 淡蓝
-  "#80DEEA", // 青色
-  "#4DD0E1", // 青绿
-  "#4DB6AC", // 青绿
-  "#81C784", // 柔和绿
-  "#AED581", // 柠檬绿
-  "#DCE775", // 浅黄绿
-  "#FFF59D" // 柔和黄
+  "#AAB7B8",
+  "#B2BEB5",
+  "#FFAAA5",
+  "#C3B1E1",
+  "#A8E6CF",
+  "#DCEDC1",
+  "#FFD3B6",
+  "#FF8B94",
+  "#B39DDB",
+  "#D8C3A5",
+  "#9FA8DA",
+  "#90CAF9",
+  "#81D4FA",
+  "#80DEEA",
+  "#4DD0E1",
+  "#4DB6AC",
+  "#81C784",
+  "#AED581",
+  "#DCE775",
+  "#FFF59D"
 ];
 const editForm = reactive({ id: -1, title: "", time: 25, shortBreak: 5 });
-const durationMarks = { 15: "15", 25: "25", 35: "35", 45: "45", 55: "55" };
+const durationMarks = {
+  15: "15",
+  20: "20",
+  25: "25",
+  30: "30",
+  35: "35",
+  40: "40",
+  45: "45",
+  50: "50",
+  55: "55",
+  60: "60",
+  90: "90",
+  120: "120",
+};
 const shortBreakMarks = { 3: "3", 6: "6", 9: "9", 12: "12", 15: "15" };
 
 // --- 动作函数 ---
-
-// 1. 切换编辑模式 / 触发新增
 const toggleEditMode = () => {
   if (isEditMode.value) {
     openAddModal();
   } else {
     isEditMode.value = true;
-    Message.info("已进入编辑模式，点击 X 删除卡片，点击右下角 + 新增");
+    Message.info("已进入编辑模式");
   }
 };
-
-// 2. 打开新增弹窗
 const openAddModal = () => {
   editForm.id = -1;
   editForm.title = "";
@@ -84,8 +148,6 @@ const openAddModal = () => {
   editForm.shortBreak = 5;
   settingsVisible.value = true;
 };
-
-// 3. 打开设置弹窗（修改现有）
 const openSettings = item => {
   editForm.id = item.id;
   editForm.title = item.title;
@@ -93,14 +155,11 @@ const openSettings = item => {
   editForm.shortBreak = item.shortBreak || 5;
   settingsVisible.value = true;
 };
-
-// 4. 保存设置
 const handleSaveSettings = () => {
   if (!editForm.title) {
     Message.warning("请输入标题");
     return;
   }
-
   if (editForm.id === -1) {
     const newId = Date.now();
     const randomColor =
@@ -120,8 +179,6 @@ const handleSaveSettings = () => {
   }
   settingsVisible.value = false;
 };
-
-// 5. 删除卡片
 const deleteCard = item => {
   Modal.warning({
     title: "确认删除",
@@ -136,27 +193,37 @@ const deleteCard = item => {
     }
   });
 };
-
-// 6. 退出编辑模式
 const handleBackgroundClick = e => {
-  // 确保点击的不是FAB按钮本身才退出
-  if (isEditMode.value && e.target.classList.contains("card-container")) {
+  if (isEditMode.value && e.target.classList.contains("card-container"))
     isEditMode.value = false;
-  }
 };
 
+// --- 核心：选择卡片并初始化 ---
 const selectCard = config => {
   if (isEditMode.value) return;
+
+  // 1. 初始化数据
   currentCard.value = config;
-  originTime.value = config.time * 60;
-  totalTime.value = originTime.value;
-  percent.value = 0;
-  halfFirst = true;
+  currentPhase.value = "focus"; // 默认为专注模式
+  cycleCount.value = 0; // 重置周期计数
+
+  // 2. 设置时间
+  setTimer(config.time);
+
+  // 3. 启动
   isTimerActive.value = true;
   startTimer();
 };
 
-// --- 计时器逻辑 (保持不变) ---
+// 辅助函数：设置倒计时时间
+const setTimer = minutes => {
+  originTime.value = minutes * 60;
+  totalTime.value = originTime.value;
+  percent.value = 0;
+  halfFirst = true;
+};
+
+// --- 计时器逻辑 ---
 const audioFullTimePlayer = ref(null);
 const audioHalfTimePlayer = ref(null);
 const role = computed(
@@ -183,40 +250,82 @@ const startTimer = () => {
         percent.value = Number(
           (1 - totalTime.value / originTime.value).toFixed(2)
         );
-        if (percent.value >= 0.5 && halfFirst) {
-          halfFirst = false;
-          !isClosed.value && audioHalfTimePlayer.value?.play();
-          window.electron.notificationUser("timer-half");
-        }
       } else {
-        clearInterval(intervalId);
-        intervalId = null;
-        isRunning.value = false;
-        percent.value = 1;
-        if (currentCard.value) {
-          statisticsStore.addRecord({
-            cardTitle: currentCard.value.title,
-            duration: currentCard.value.time, // 记录设定的时长（分钟）
-            type: "focus"
-          });
-        }
-        !isClosed.value && audioFullTimePlayer.value?.play();
-        window.electron.notificationUser("timer-full");
+        // --- 倒计时结束，处理逻辑流 ---
+        handleTimerComplete();
       }
     }, 1000);
   }
 };
+
+// --- 核心：时间结束处理逻辑 (状态机) ---
+const handleTimerComplete = () => {
+  clearInterval(intervalId);
+  intervalId = null;
+  isRunning.value = false;
+  percent.value = 1;
+
+  // 1. 播放结束音效
+  !isClosed.value && audioFullTimePlayer.value?.play();
+  window.electron.notificationUser("timer-full");
+
+  // 2. 只有在专注模式结束时，才记录统计数据
+  if (currentPhase.value === "focus" && currentCard.value) {
+    statisticsStore.addRecord({
+      cardTitle: currentCard.value.title,
+      duration: currentCard.value.time,
+      type: "focus"
+    });
+
+    // 增加周期计数
+    cycleCount.value++;
+  }
+
+  // 3. 自动切换到下一阶段 (Prepare Next Phase)
+  if (currentPhase.value === "focus") {
+    // 专注结束 -> 休息
+    const interval = globalSettings.value.longBreakInterval || 4;
+
+    // 如果达到了长休息周期 (例如 4次)
+    if (cycleCount.value % interval === 0) {
+      currentPhase.value = "longBreak";
+      const longBreakTime = globalSettings.value.longBreakDuration || 15;
+      setTimer(longBreakTime);
+      startQuoteRotation();
+      Message.success(`恭喜完成一轮！开始 ${longBreakTime} 分钟长休息`);
+    } else {
+      // 否则进入短休息
+      currentPhase.value = "shortBreak";
+      // 优先使用卡片单独设置的短休息时间，没有则用默认
+      // const shortBreakTime = currentCard.value.shortBreak || 5;
+      const shortBreakTime = 0.1;
+      stopQuoteRotation();
+      setTimer(shortBreakTime);
+      Message.info(`专注结束，休息 ${shortBreakTime} 分钟`);
+    }
+  } else {
+    // 休息结束 -> 专注
+    currentPhase.value = "focus";
+    setTimer(currentCard.value.time);
+    Message.info("休息结束，准备开始新一轮专注 🔥");
+  }
+
+  startTimer();
+};
+
 const pauseTimer = () => {
   clearInterval(intervalId);
   intervalId = null;
   isRunning.value = false;
 };
+
 const resetToCards = () => {
   pauseTimer();
   isTimerActive.value = false;
   totalTime.value = 0;
   percent.value = 0;
 };
+
 onUnmounted(() => clearInterval(intervalId));
 </script>
 
@@ -253,17 +362,28 @@ onUnmounted(() => clearInterval(intervalId));
       </div>
 
       <div v-else class="timer-wrapper" key="timer">
+        <transition name="fade">
+          <div v-if="currentPhase === 'longBreak'" class="rest-quote" key="quote">
+            {{ restQuotes[currentQuoteIndex] }}
+          </div>
+        </transition>
+
         <a-progress
           :percent="percent"
           type="circle"
           size="large"
           :width="400"
-          color="rgb(12, 228, 140)"
+          :color="currentPhase === 'focus' ? 'rgb(12, 228, 140)' : '#409EFF'"
           class="big-timer-progress"
         >
           <template #text>
             <div class="inner-timer-container">
+              <div class="phase-info" :class="currentPhase">
+                <div v-if="currentPhase != 'focus'" class="phase-badge">{{ phaseTip }}</div>
+              </div>
+
               <div class="timer-display">{{ minutes }}:{{ seconds }}</div>
+
               <div class="controls">
                 <a-button
                   @click="isRunning ? pauseTimer() : startTimer()"
@@ -291,7 +411,6 @@ onUnmounted(() => clearInterval(intervalId));
 
     <label v-if="!isTimerActive" class="fab-container" @click.prevent.stop="toggleEditMode">
       <input type="checkbox" :checked="isEditMode" />
-
       <svg
         class="icon-edit"
         xmlns="http://www.w3.org/2000/svg"
@@ -303,7 +422,6 @@ onUnmounted(() => clearInterval(intervalId));
           d="M 22.828125 3 C 22.316375 3 21.804562 3.1954375 21.414062 3.5859375 L 19 6 L 24 11 L 26.414062 8.5859375 C 27.195062 7.8049375 27.195062 6.5388125 26.414062 5.7578125 L 24.242188 3.5859375 C 23.851688 3.1954375 23.339875 3 22.828125 3 z M 17 8 L 5.2597656 19.740234 C 5.2597656 19.740234 6.1775313 19.658 6.5195312 20 C 6.8615312 20.342 6.58 22.58 7 23 C 7.42 23.42 9.6438906 23.124359 9.9628906 23.443359 C 10.281891 23.762359 10.259766 24.740234 10.259766 24.740234 L 22 13 L 17 8 z M 4 23 L 3.0566406 25.671875 A 1 1 0 0 0 3 26 A 1 1 0 0 0 4 27 A 1 1 0 0 0 4.328125 26.943359 A 1 1 0 0 0 4.3378906 26.939453 L 4.3632812 26.931641 A 1 1 0 0 0 4.3691406 26.927734 L 7 26 L 5.5 24.5 L 4 23 z"
         />
       </svg>
-
       <svg class="icon-add" xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 448 512">
         <path
           d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"
@@ -324,7 +442,7 @@ onUnmounted(() => clearInterval(intervalId));
           <a-slider
             v-model="editForm.time"
             :min="15"
-            :max="55"
+            :max="120"
             :marks="durationMarks"
             :style="{ width: '100%' }"
           />
@@ -353,6 +471,34 @@ onUnmounted(() => clearInterval(intervalId));
 </template>
 
 <style scoped>
+/* 保持原有样式不变，新增以下状态指示样式 */
+
+/* 状态提示容器 */
+.phase-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.phase-badge {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 5px 15px;
+  border-radius: 20px;
+  backdrop-filter: blur(5px);
+}
+
+.cycle-count {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  color: white;
+}
+
+/* 根据状态改变进度条颜色逻辑已在 template 中通过 :color 实现 */
 .main {
   width: 100%;
   height: 100%;
@@ -459,10 +605,7 @@ onUnmounted(() => clearInterval(intervalId));
   background: red;
   transform: scale(1.1);
 }
-
-/* === 新版 SVG 动画 FAB 按钮样式 === */
 .fab-container {
-  /* 基础定位和样式 (继承自原先的蓝色圆形按钮) */
   position: absolute;
   bottom: 40px;
   right: 40px;
@@ -474,25 +617,17 @@ onUnmounted(() => clearInterval(intervalId));
   cursor: pointer;
   z-index: 100;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-
-  /* Flex 布局用于居中 SVG */
   display: flex;
   justify-content: center;
   align-items: center;
-
-  /* SVG 基础设置 */
-  font-size: 30px; /* 控制图标大小 */
-  fill: white; /* 图标颜色 */
+  font-size: 30px;
+  fill: white;
   user-select: none;
 }
-
-/* 整体 Hover 效果 */
 .fab-container:hover {
   transform: scale(1.1);
   box-shadow: 0 8px 25px rgba(64, 158, 255, 0.6);
 }
-
-/* 隐藏 input checkbox */
 .fab-container input {
   position: absolute;
   opacity: 0;
@@ -500,8 +635,6 @@ onUnmounted(() => clearInterval(intervalId));
   height: 0;
   width: 0;
 }
-
-/* SVG 动画逻辑 */
 .fab-container .icon-edit {
   position: absolute;
   animation: keyframes-fill 0.3s;
@@ -511,16 +644,12 @@ onUnmounted(() => clearInterval(intervalId));
   display: none;
   animation: keyframes-fill 0.3s;
 }
-
-/* 根据 checkbox 状态切换显示 */
 .fab-container input:checked ~ .icon-edit {
   display: none;
 }
 .fab-container input:checked ~ .icon-add {
   display: block;
 }
-
-/* 动画关键帧 */
 @keyframes keyframes-fill {
   0% {
     transform: scale(0);
@@ -531,13 +660,45 @@ onUnmounted(() => clearInterval(intervalId));
   }
 }
 
-/* 计时器样式 (保持不变) */
+/* === 修改后的计时器包裹层 === */
 .timer-wrapper {
   display: flex;
   justify-content: center;
   align-items: center;
   animation: fadeIn 0.5s ease;
+  position: relative; /* 关键：给绝对定位的子元素提供基准 */
 }
+
+/* 语录绝对定位样式 */
+.rest-quote {
+  position: absolute;
+  /* circle height = 400px
+    top: -80px 意味着在圆圈容器的顶部边缘再往上 80px
+    这样完全脱离圆圈内部，防止挤压
+  */
+  top: -80px; 
+  left: 50%;
+  transform: translateX(-50%); /* 水平居中 */
+  
+  width: max-content; /* 宽度自适应内容 */
+  max-width: 600px;   /* 限制最大宽度防止太长 */
+  
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 10px 25px;
+  border-radius: 15px;
+  backdrop-filter: blur(5px);
+  z-index: 10;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
 :deep(.arco-progress-circle) {
   width: 400px !important;
   height: 400px !important;
@@ -589,6 +750,7 @@ onUnmounted(() => clearInterval(intervalId));
 .fade-leave-to {
   opacity: 0;
 }
+
 @keyframes fadeIn {
   from {
     opacity: 0;
