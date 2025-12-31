@@ -236,19 +236,17 @@ const resetVoiceForm = () => {
           style="width: 100px"
           v-model="voiceForm.pomodoroV"
         >
-          <a-option value="default">东雪莲</a-option>
-          <a-option value="dingzhen">丁真</a-option>
-          <a-option value="jiaran">嘉然</a-option>
-          <a-option value="Kobe">科比</a-option>
+          <a-option value="default">默认</a-option>
+          <a-option value="female">女声</a-option>
+          <a-option value="male">男声</a-option>
         </a-select>
       </a-form-item>
 
       <a-form-item field="voiceForm.timerV" label="计时器">
         <a-select size="small" style="width: 100px" v-model="voiceForm.timerV">
-          <a-option value="default">东雪莲</a-option>
-          <a-option value="dingzhen">丁真</a-option>
-          <a-option value="jiaran">嘉然</a-option>
-          <a-option value="Kobe">科比</a-option>
+          <a-option value="default">默认</a-option>
+          <a-option value="female">女声</a-option>
+          <a-option value="male">男声</a-option>
         </a-select>
       </a-form-item>
       <a-form-item field="voiceForm.todoV" label="待办">

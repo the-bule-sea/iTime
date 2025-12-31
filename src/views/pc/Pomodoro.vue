@@ -461,11 +461,11 @@ onUnmounted(() => clearInterval(intervalId));
 
     <audio
       ref="audioHalfTimePlayer"
-      :src="`currentPath/assets/voices/timer/{currentPath}/assets/voices/timer/currentPath/assets/voices/timer/{role}/halfTime.wav`"
+      :src="`${currentPath}/assets/voices/timer/${role}/halfTime.wav`"
     ></audio>
     <audio
       ref="audioFullTimePlayer"
-      :src="`currentPath/assets/voices/timer/{currentPath}/assets/voices/timer/currentPath/assets/voices/timer/{role}/fullTime.wav`"
+      :src="`${currentPath}/assets/voices/timer/${role}/fullTime.wav`"
     ></audio>
   </div>
 </template>

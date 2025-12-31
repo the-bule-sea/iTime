@@ -17,6 +17,8 @@ coverage
 .vscode
 dist_electron
 
+CLAUDE.md
+
 
 /cypress/videos/
 /cypress/screenshots/
