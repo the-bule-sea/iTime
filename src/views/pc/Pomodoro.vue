@@ -297,8 +297,7 @@ const handleTimerComplete = () => {
       // 否则进入短休息
       currentPhase.value = "shortBreak";
       // 优先使用卡片单独设置的短休息时间，没有则用默认
-      // const shortBreakTime = currentCard.value.shortBreak || 5;
-      const shortBreakTime = 0.1;
+      const shortBreakTime = currentCard.value.shortBreak || 5;
       stopQuoteRotation();
       setTimer(shortBreakTime);
       Message.info(`专注结束，休息 ${shortBreakTime} 分钟`);

@@ -99,9 +99,9 @@ const pauseTimer = () => {
 onMounted(() => {
   window.addEventListener("keydown", handleKeyDown);
   if (isFirst.value) {
-    Message.info({
-      content: "按F键即可进入全屏、按A键可以发送小挂件😎",
-    });
+    // Message.info({
+    //   content: "按F键即可进入全屏、按A键可以发送小挂件😎",
+    // });
     isFirst.value = false;
   }
 });
