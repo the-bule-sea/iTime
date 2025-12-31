@@ -44,7 +44,7 @@ const restQuotes = ref([
   "累了困了，站起来走走",
   "只要不停下脚步，道路就会...不断延伸！",
   "今天也要加油哦",
-  "再喝一口水",
+  "再喝一口水"
 ]);
 const currentQuoteIndex = ref(0);
 let quoteIntervalId = null;
@@ -76,7 +76,7 @@ const originTime = ref(0);
 let intervalId = null;
 let halfFirst = true;
 
-// --- 核心逻辑状态 (新加) ---
+// --- 核心逻辑状态 ---
 const currentCard = ref(null); // 当前选中的卡片数据
 const cycleCount = ref(0); // 当前已完成的番茄数
 // 阶段状态: 'focus'(专注), 'shortBreak'(短休), 'longBreak'(长休)
@@ -84,7 +84,6 @@ const currentPhase = ref("focus");
 
 // 计算当前阶段的提示文案
 const phaseTip = computed(() => {
-  // if (currentPhase.value === "focus") return "专注中";
   if (currentPhase.value === "shortBreak") return "短休息";
   if (currentPhase.value === "longBreak") return "长休息";
   return "";
@@ -224,14 +223,20 @@ const setTimer = minutes => {
 };
 
 // --- 计时器逻辑 ---
-const audioFullTimePlayer = ref(null);
+// 播放器对象 (新增三个专用播放器)
+const audioShortBreakPlayer = ref(null);
+const audioLongBreakPlayer = ref(null);
+const audioFocusPlayer = ref(null);
+// 保持半程提示播放器 (如果 assets/voices/timer 下有这个文件则保留，否则也可以换成 pomodoro 下的)
 const audioHalfTimePlayer = ref(null);
+
 const role = computed(
-  () => customSettingsStore.customSettings.voice.timerV ?? "default"
-);
+  () => customSettingsStore.customSettings.voice.pomodoroV ?? "default"
+); // 注意：这里改为读取番茄钟的角色配置 pomodoroV，而不是 timerV
 const isClosed = computed(
   () => customSettingsStore.customSettings.voice.isClosedV ?? "false"
 );
+
 const minutes = computed(() =>
   Math.floor(totalTime.value / 60)
     .toString()
@@ -258,57 +263,62 @@ const startTimer = () => {
   }
 };
 
-// --- 核心：时间结束处理逻辑 (状态机) ---
+// --- 核心：时间结束处理逻辑 (状态机 + 音效) ---
 const handleTimerComplete = () => {
   clearInterval(intervalId);
   intervalId = null;
   isRunning.value = false;
   percent.value = 1;
 
-  // 1. 播放结束音效
-  !isClosed.value && audioFullTimePlayer.value?.play();
-  window.electron.notificationUser("timer-full");
-
-  // 2. 只有在专注模式结束时，才记录统计数据
+  // 1. 判断当前阶段并流转
   if (currentPhase.value === "focus" && currentCard.value) {
+    // 专注结束 -> 记录数据
     statisticsStore.addRecord({
       cardTitle: currentCard.value.title,
       duration: currentCard.value.time,
       type: "focus"
     });
-
-    // 增加周期计数
     cycleCount.value++;
-  }
 
-  // 3. 自动切换到下一阶段 (Prepare Next Phase)
-  if (currentPhase.value === "focus") {
-    // 专注结束 -> 休息
     const interval = globalSettings.value.longBreakInterval || 4;
 
-    // 如果达到了长休息周期 (例如 4次)
+    // 判断是长休息还是短休息
     if (cycleCount.value % interval === 0) {
+      // -> 进入长休息
       currentPhase.value = "longBreak";
       const longBreakTime = globalSettings.value.longBreakDuration || 15;
       setTimer(longBreakTime);
       startQuoteRotation();
+
+      // 播放长休息音效
+      !isClosed.value && audioLongBreakPlayer.value?.play();
+      window.electron.notificationUser("pomodoro-longBreak");
       Message.success(`恭喜完成一轮！开始 ${longBreakTime} 分钟长休息`);
     } else {
-      // 否则进入短休息
+      // -> 进入短休息
       currentPhase.value = "shortBreak";
-      // 优先使用卡片单独设置的短休息时间，没有则用默认
+      // 优先使用卡片单独设置的短休息时间
       const shortBreakTime = currentCard.value.shortBreak || 5;
       stopQuoteRotation();
       setTimer(shortBreakTime);
+
+      // 播放短休息音效
+      !isClosed.value && audioShortBreakPlayer.value?.play();
+      window.electron.notificationUser("pomodoro-shortBreak");
       Message.info(`专注结束，休息 ${shortBreakTime} 分钟`);
     }
   } else {
     // 休息结束 -> 专注
     currentPhase.value = "focus";
     setTimer(currentCard.value.time);
-    Message.info("休息结束，准备开始新一轮专注 🔥");
+
+    // 播放专注开始音效
+    !isClosed.value && audioFocusPlayer.value?.play();
+    window.electron.notificationUser("pomodoro-work");
+    Message.info("休息结束，准备开始新一轮专注");
   }
 
+  // 自动开始下一轮
   startTimer();
 };
 
@@ -362,9 +372,11 @@ onUnmounted(() => clearInterval(intervalId));
 
       <div v-else class="timer-wrapper" key="timer">
         <transition name="fade">
-          <div v-if="currentPhase === 'longBreak'" class="rest-quote" key="quote">
-            {{ restQuotes[currentQuoteIndex] }}
-          </div>
+          <div
+            v-if="currentPhase === 'longBreak'"
+            class="rest-quote"
+            key="quote"
+          >{{ restQuotes[currentQuoteIndex] }}</div>
         </transition>
 
         <a-progress
@@ -460,19 +472,25 @@ onUnmounted(() => clearInterval(intervalId));
 
     <audio
       ref="audioHalfTimePlayer"
-      :src="`${currentPath}/assets/voices/timer/${role}/halfTime.wav`"
+      :src="`${currentPath}/assets/voices/timer/{role}/halfTime.wav`"
     ></audio>
     <audio
-      ref="audioFullTimePlayer"
-      :src="`${currentPath}/assets/voices/timer/${role}/fullTime.wav`"
+      ref="audioShortBreakPlayer"
+      :src="`${currentPath}/assets/voices/pomodoro/{role}/shortBreak.wav`"
+    ></audio>
+    <audio
+      ref="audioLongBreakPlayer"
+      :src="`${currentPath}/assets/voices/pomodoro/{role}/longBreak.wav`"
+    ></audio>
+    <audio
+      ref="audioFocusPlayer"
+      :src="`${currentPath}/assets/voices/pomodoro/{role}/focus.wav`"
     ></audio>
   </div>
 </template>
 
 <style scoped>
-/* 保持原有样式不变，新增以下状态指示样式 */
-
-/* 状态提示容器 */
+/* 保持所有样式不变，无需改动 */
 .phase-info {
   display: flex;
   flex-direction: column;
@@ -480,7 +498,6 @@ onUnmounted(() => clearInterval(intervalId));
   gap: 5px;
   margin-bottom: 5px;
 }
-
 .phase-badge {
   font-size: 1.5rem;
   font-weight: bold;
@@ -490,14 +507,11 @@ onUnmounted(() => clearInterval(intervalId));
   border-radius: 20px;
   backdrop-filter: blur(5px);
 }
-
 .cycle-count {
   font-size: 0.9rem;
   opacity: 0.8;
   color: white;
 }
-
-/* 根据状态改变进度条颜色逻辑已在 template 中通过 :color 实现 */
 .main {
   width: 100%;
   height: 100%;
@@ -658,35 +672,24 @@ onUnmounted(() => clearInterval(intervalId));
     transform: scale(1.1);
   }
 }
-
-/* === 修改后的计时器包裹层 === */
 .timer-wrapper {
   display: flex;
   justify-content: center;
   align-items: center;
   animation: fadeIn 0.5s ease;
-  position: relative; /* 关键：给绝对定位的子元素提供基准 */
+  position: relative;
 }
-
-/* 语录绝对定位样式 */
 .rest-quote {
   position: absolute;
-  /* circle height = 400px
-    top: -80px 意味着在圆圈容器的顶部边缘再往上 80px
-    这样完全脱离圆圈内部，防止挤压
-  */
-  top: -80px; 
+  top: -80px;
   left: 50%;
-  transform: translateX(-50%); /* 水平居中 */
-  
-  width: max-content; /* 宽度自适应内容 */
-  max-width: 600px;   /* 限制最大宽度防止太长 */
-  
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 600px;
   display: flex;
   justify-content: center;
   align-items: center;
   text-align: center;
-  
   font-size: 1.6rem;
   font-weight: bold;
   color: #fff;
@@ -695,9 +698,8 @@ onUnmounted(() => clearInterval(intervalId));
   border-radius: 15px;
   backdrop-filter: blur(5px);
   z-index: 10;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
-
 :deep(.arco-progress-circle) {
   width: 400px !important;
   height: 400px !important;
@@ -749,7 +751,6 @@ onUnmounted(() => clearInterval(intervalId));
 .fade-leave-to {
   opacity: 0;
 }
-
 @keyframes fadeIn {
   from {
     opacity: 0;
