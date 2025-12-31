@@ -472,19 +472,19 @@ onUnmounted(() => clearInterval(intervalId));
 
     <audio
       ref="audioHalfTimePlayer"
-      :src="`${currentPath}/assets/voices/timer/{role}/halfTime.wav`"
+      :src="`${currentPath}/assets/voices/timer/${role}/halfTime.wav`"
     ></audio>
     <audio
       ref="audioShortBreakPlayer"
-      :src="`${currentPath}/assets/voices/pomodoro/{role}/shortBreak.wav`"
+      :src="`${currentPath}/assets/voices/pomodoro/${role}/shortBreak.wav`"
     ></audio>
     <audio
       ref="audioLongBreakPlayer"
-      :src="`${currentPath}/assets/voices/pomodoro/{role}/longBreak.wav`"
+      :src="`${currentPath}/assets/voices/pomodoro/${role}/longBreak.wav`"
     ></audio>
     <audio
       ref="audioFocusPlayer"
-      :src="`${currentPath}/assets/voices/pomodoro/{role}/focus.wav`"
+      :src="`${currentPath}/assets/voices/pomodoro/${role}/focus.wav`"
     ></audio>
   </div>
 </template>
